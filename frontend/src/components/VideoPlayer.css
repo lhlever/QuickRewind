@@ -1,0 +1,231 @@
+.video-player-container {
+  background-color: #ffffff;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.video-header {
+  padding: clamp(12px, 2vw, 15px) clamp(15px, 3vw, 20px);
+  background-color: #1e293b;
+  color: white;
+  border-bottom: 1px solid #334155;
+}
+
+.video-header h3 {
+  margin: 0;
+  font-size: clamp(14px, 1.8vw, 16px);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  background-color: #0f172a;
+}
+
+.video-element {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: block;
+  cursor: pointer;
+  background-color: #030712;
+  object-fit: contain;
+}
+
+.video-controls {
+  display: flex;
+  align-items: center;
+  gap: clamp(8px, 1.5vw, 12px);
+  padding: clamp(10px, 2vw, 12px) clamp(12px, 2vw, 16px);
+  background-color: rgba(15, 23, 42, 0.9);
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  backdrop-filter: blur(4px);
+  transition: opacity 0.3s ease;
+  opacity: 0.9;
+}
+
+.video-wrapper:hover .video-controls {
+  opacity: 1;
+}
+
+.play-pause-btn,
+.volume-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: clamp(18px, 2vw, 20px);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(30px, 4vw, 36px);
+  height: clamp(30px, 4vw, 36px);
+  border-radius: 50%;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.play-pause-btn:hover,
+.volume-btn:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+.time-display {
+  color: white;
+  font-size: clamp(12px, 1.5vw, 14px);
+  font-family: monospace;
+  min-width: clamp(80px, 12vw, 90px);
+  text-align: center;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 4px;
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: height 0.2s ease;
+}
+
+.progress-bar:hover {
+  height: 6px;
+}
+
+.progress-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background-color: #3b82f6;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s ease, width 0.2s ease, height 0.2s ease;
+}
+
+.progress-bar::-webkit-slider-thumb:hover {
+  transform: scale(1.3);
+  width: 14px;
+  height: 14px;
+}
+
+.progress-bar::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background-color: #3b82f6;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  transition: transform 0.2s ease;
+}
+
+.progress-bar::-moz-range-thumb:hover {
+  transform: scale(1.3);
+}
+
+.volume-slider {
+  width: 80px;
+  height: 4px;
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  background-color: white;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  background-color: white;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  transition: transform 0.2s ease;
+}
+
+.volume-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .video-header {
+    padding: 12px 15px;
+  }
+  
+  .video-header h3 {
+    font-size: 14px;
+  }
+  
+  .video-controls {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  
+  .play-pause-btn,
+  .volume-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
+  }
+  
+  .time-display {
+    font-size: 12px;
+    min-width: 80px;
+  }
+  
+  .volume-slider {
+    width: 60px;
+  }
+}
+
+@media (max-width: 480px) {
+  .volume-slider {
+    display: none;
+  }
+  
+  .video-controls {
+    gap: 6px;
+  }
+}
+
+/* 加载动画 */
+.video-element::before {
+  content: "加载中...";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 16px;
+  display: none;
+}
+
+.video-element[poster=""]::before {
+  display: block;
+}

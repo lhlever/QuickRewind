@@ -1,0 +1,168 @@
+.uploader-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 30px;
+}
+
+.uploader-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.uploader-header h2 {
+  color: #1e293b;
+  font-size: 28px;
+  margin-bottom: 10px;
+}
+
+.uploader-header p {
+  color: #64748b;
+  font-size: 16px;
+}
+
+.uploader-dropzone {
+  border: 2px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background-color: #f8fafc;
+  margin-bottom: 20px;
+}
+
+.uploader-dropzone:hover {
+  border-color: #3b82f6;
+  background-color: #f1f5f9;
+}
+
+.uploader-dropzone.dragging {
+  border-color: #2563eb;
+  background-color: #e0f2fe;
+  transform: scale(1.02);
+}
+
+.file-input {
+  display: none;
+}
+
+.dropzone-content .upload-icon {
+  font-size: 48px;
+  margin-bottom: 20px;
+}
+
+.dropzone-content h3 {
+  color: #1e293b;
+  font-size: 20px;
+  margin-bottom: 10px;
+}
+
+.dropzone-content p {
+  color: #64748b;
+  font-size: 14px;
+  margin-bottom: 5px;
+}
+
+.file-size-limit {
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.upload-preview {
+  text-align: left;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.file-icon {
+  font-size: 32px;
+  margin-right: 15px;
+}
+
+.file-details h4 {
+  color: #1e293b;
+  margin: 0 0 5px 0;
+  font-size: 16px;
+}
+
+.file-details p {
+  color: #64748b;
+  margin: 0;
+  font-size: 14px;
+}
+
+.progress-container {
+  width: 100%;
+  height: 12px;
+  background-color: #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #2563eb);
+  border-radius: 6px;
+  transition: width 0.3s ease;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.progress-text {
+  color: #3b82f6;
+  font-weight: 500;
+  text-align: center;
+  margin: 0;
+}
+
+.uploader-tips {
+  background-color: #f8fafc;
+  border-radius: 8px;
+  padding: 20px;
+  border-left: 4px solid #3b82f6;
+}
+
+.uploader-tips h4 {
+  color: #1e293b;
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+
+.uploader-tips ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.uploader-tips li {
+  color: #64748b;
+  margin-bottom: 5px;
+  font-size: 14px;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .uploader-container {
+    padding: 20px;
+  }
+  
+  .uploader-header h2 {
+    font-size: 24px;
+  }
+  
+  .uploader-dropzone {
+    padding: 30px 20px;
+  }
+  
+  .dropzone-content .upload-icon {
+    font-size: 36px;
+  }
+  
+  .dropzone-content h3 {
+    font-size: 18px;
+  }
+}
