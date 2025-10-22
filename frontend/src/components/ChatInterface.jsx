@@ -124,16 +124,7 @@ const ChatInterface = ({ onSearch }) => {
 
   return (
     <div className="chat-interface">
-      <div className="chat-header">
-        <div className="header-content">
-          <h3>QuickRewind 助手</h3>
-          <div className="online-status">
-            <span className="status-dot"></span>
-            <span className="status-text">在线</span>
-          </div>
-        </div>
-        <p>通过自然语言提问查找视频内容</p>
-      </div>
+      {/* 移除重复的标题栏，只保留主应用的标题栏 */}
 
       <div className="chat-container" ref={chatContainerRef}>
         {messages.map((message) => (

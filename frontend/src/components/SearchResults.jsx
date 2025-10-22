@@ -108,12 +108,7 @@ const SearchResults = ({ results, onResultSelect }) => {
 
   return (
     <div className="search-results">
-      <div className="results-header">
-        <h3>搜索结果 ({results.length})</h3>
-        <div className="results-info">
-          点击任意结果查看详情和视频大纲
-        </div>
-      </div>
+    {/* 移除重复的标题栏，只保留主应用的标题栏 */}
       
       <div className="results-list">
         {results.map((result) => (

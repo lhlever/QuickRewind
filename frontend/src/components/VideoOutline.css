@@ -25,8 +25,9 @@
 }
 
 .outline-content {
-  max-height: 400px;
+  height: 100%;
   overflow-y: auto;
+  padding: calc(var(--space-xs, 8px) * 0.6) 0;
 }
 
 .empty-outline {
@@ -37,7 +38,8 @@
 
 .outline-item {
   border-bottom: 1px solid #f1f5f9;
-  transition: background-color 0.2s ease;
+  transition: all 0.2s ease;
+  border-radius: calc(var(--radius-sm, 4px) * 0.8);
 }
 
 .outline-item.even {
@@ -55,8 +57,11 @@
 .outline-item-header {
   display: flex;
   align-items: center;
-  padding: 15px 20px;
+  padding: calc(var(--space-xs, 8px) * 0.9) calc(var(--space-sm, 12px) * 0.9);
   cursor: pointer;
+  gap: 8px;
+  position: relative;
+  user-select: none;
   transition: background-color 0.2s ease;
 }
 
@@ -65,15 +70,13 @@
 }
 
 .expand-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  font-size: 12px;
-  color: #64748b;
-  margin-right: 10px;
+  font-size: 10px;
+  color: #94a3b8;
   transition: transform 0.2s ease;
+  width: 10px;
+  text-align: center;
+  flex-shrink: 0;
+  margin-right: 10px;
 }
 
 .expand-icon.expanded {
@@ -81,38 +84,42 @@
 }
 
 .time-marker {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 11px;
+  font-family: monospace;
   color: #3b82f6;
+  font-weight: 500;
+  min-width: 45px;
+  text-align: center;
+  flex-shrink: 0;
   margin-right: 15px;
-  min-width: 60px;
 }
 
 .item-content {
   flex: 1;
+  min-width: 0;
 }
 
 .item-content h4 {
-  margin: 0 0 5px 0;
-  font-size: 15px;
+  margin: 0 0 3px 0;
+  font-size: 12px;
   font-weight: 500;
   color: #1e293b;
 }
 
 .snippet {
   margin: 0;
-  font-size: 13px;
+  font-size: 10px;
   color: #64748b;
-  line-height: 1.4;
+  line-height: 1.3;
 }
 
 .play-button {
   background: none;
   border: 1px solid #cbd5e1;
   border-radius: 50%;
-  width: 32px;
-  height: 32px;
-  font-size: 14px;
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -124,22 +131,22 @@
   background-color: #3b82f6;
   border-color: #3b82f6;
   color: white;
-  transform: scale(1.1);
+  transform: scale(1.05);
 }
 
 .outline-children {
-  margin-left: 30px;
+  margin-left: 20px;
   background-color: #f8fafc;
 }
 
 .outline-children .outline-item {
-  border-left: 3px solid #e2e8f0;
-  margin-left: 10px;
+  border-left: 2px solid #e2e8f0;
+  margin-left: 6px;
 }
 
 /* 滚动条样式 */
 .outline-content::-webkit-scrollbar {
-  width: 6px;
+  width: 3px;
 }
 
 .outline-content::-webkit-scrollbar-track {
@@ -148,7 +155,7 @@
 
 .outline-content::-webkit-scrollbar-thumb {
   background: #cbd5e1;
-  border-radius: 3px;
+  border-radius: 1.5px;
 }
 
 .outline-content::-webkit-scrollbar-thumb:hover {
@@ -159,29 +166,29 @@
 @media (max-width: 768px) {
   .outline-header,
   .outline-item-header {
-    padding: 12px 15px;
+    padding: calc(var(--space-xs, 8px) * 0.8) calc(var(--space-xs, 8px) * 0.8);
   }
   
   .time-marker {
-    min-width: 50px;
-    font-size: 13px;
+    min-width: 40px;
+    font-size: 10px;
   }
   
   .item-content h4 {
-    font-size: 14px;
+    font-size: 11px;
   }
   
   .snippet {
-    font-size: 12px;
+    font-size: 9px;
   }
   
   .play-button {
-    width: 28px;
-    height: 28px;
-    font-size: 12px;
+    width: 20px;
+    height: 20px;
+    font-size: 8px;
   }
   
   .outline-children {
-    margin-left: 20px;
+    margin-left: 15px;
   }
 }

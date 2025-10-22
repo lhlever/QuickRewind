@@ -94,9 +94,7 @@ const VideoPlayer = forwardRef(({ video, initialTime }, ref) => {
 
   return (
     <div className="video-player-container">
-      <div className="video-header">
-        <h3>{video?.name || '视频播放器'}</h3>
-      </div>
+      {/* 移除重复的标题栏，只保留主应用的标题栏 */}
       
       <div className="video-wrapper">
         <video

@@ -187,10 +187,7 @@ const VideoUpload = ({ onVideoAnalyzed }) => {
 
   return (
     <div className="video-upload-container">
-      <h3>上传视频分析</h3>
-      <p className="upload-description">
-        上传视频文件，我们会自动分析并生成大纲，让您快速定位重要片段
-      </p>
+    {/* 移除重复的标题栏，只保留主应用的标题栏 */}
 
       {!selectedFile && (
         <div 

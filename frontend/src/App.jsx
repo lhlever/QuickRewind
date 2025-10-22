@@ -152,7 +152,7 @@ function App() {
       <header className="app-header">
         <div className="app-logo">
           <h1>QuickRewind</h1>
-          <span className="subtitle">视频 AI 助手</span>
+          <span className="subtitle">智能视频分析助手</span>
         </div>
         
         <nav className="app-nav">
@@ -196,7 +196,7 @@ function App() {
       {/* 底部状态栏 */}
       <footer className="app-footer">
         <div className="footer-info">
-          QuickRewind © 2023 | 视频 AI 智能助手
+          QuickRewind © 2024 | 智能视频分析平台
         </div>
         
         <div className="status-indicator">
