@@ -3,6 +3,21 @@
 ## 项目简介
 快速回顾视频片段，解决视频信息密度低导致检索困难的问题
 
+## 技术栈
+| 层级  | 选型                       | 作用               | 替代方案                     |
+| --- | ------------------------ | ---------------- | ------------------------ |
+| 大模型 | Qwen2-7B-Instruct 🌟     | 语义改写/重排/总结       | GPT-4o、Claude-3、GLM-4    |
+| 嵌入  | bert-base-chinese + CLIP | 文本&关键帧向量化        | m3e、bge-large、ViT-B-32   |
+| 向量库 | Milvus 2.4 GPU 🌟        | 亿级片段秒级召回         | Weaviate、Qdrant、PGVector |
+| 语音  | WhisperX                 | 时间戳级字幕           | FunASR、阿里云 ASR           |
+| 框架  | LangChain 0.2 🌟         | ReAct Agent、链式编排 | LlamaIndex、Autogen       |
+| 后端  | FastAPI + Python 3.11    | 3 个接口 + SSE 流式   | SpringBoot、Go-Gin        |
+| 前端  | React + Antd + Vite      | 搜索框/播放器/反馈       | Vue、Svelte               |
+| 存储  | MinIO (S3 协议)            | 片段缩略图&子视频        | 阿里云 OSS、AWS S3           |
+| 部署  | Docker-Compose + Nginx   | 一键拉起 6 个服务       | K8s、Rainbond             |
+| 监控  | LangSmith + Prometheus   | 调用链、token 成本     | Weights\&Biases          |
+
+
 ## 快速开始
 
 ### 环境要求

@@ -7,6 +7,9 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
+  margin-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 .chat-header {
@@ -248,11 +251,13 @@
 /* 输入区域 */
 .chat-input-container {
   display: flex;
-  padding: calc(var(--space-sm) * 0.5) var(--space-md);
+  padding: calc(var(--space-xs) * 0.5) var(--space-md) 0 var(--space-md); /* 完全移除底部内边距 */
   background-color: #ffffff;
   gap: var(--space-xs);
   border-top: 1px solid #e2e8f0;
   margin-top: auto;
+  margin-bottom: 0;
+  border-bottom: none;
 }
 
 .chat-input {

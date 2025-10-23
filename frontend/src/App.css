@@ -88,6 +88,14 @@ html, body {
   width: 100%;
   background-color: var(--bg-color, #f8fafc);
   color: var(--text-color, #1e293b);
+  height: 100%;
+}
+
+/* 主内容区域 */
+.app-content {
+  flex: 1;
+  overflow: auto;
+  width: 100%;
 }
 
 /* 确保所有flex项目都能正确扩展 */
@@ -95,10 +103,112 @@ html, body {
   box-sizing: border-box;
 }
 
+/* 底部容器样式 */
+.app-bottom-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background-color: var(--bg-color);
+  border-top: 1px solid var(--border-color);
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+}
+
+/* 预设问题区域样式 */
+.preset-questions {
+  padding: var(--space-md) var(--space-lg);
+  background-color: var(--bg-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.preset-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-right: var(--space-md);
+  font-weight: 500;
+}
+
+.preset-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
+}
+
+.preset-button {
+  padding: var(--space-sm) var(--space-md);
+  background-color: var(--primary-light);
+  color: var(--primary-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.preset-button:hover:not(:disabled) {
+  background-color: var(--primary-color);
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.preset-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 聊天输入容器样式 */
+.chat-input-container {
+  display: flex;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-color);
+}
+
+.chat-input {
+  flex: 1;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--text-base);
+  resize: none;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.chat-input:focus {
+  border-color: var(--primary-color);
+}
+
+.send-button {
+  padding: var(--space-sm) var(--space-lg);
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+  align-self: flex-end;
+  min-height: 40px;
+}
+
+.send-button:hover:not(:disabled) {
+  background-color: var(--primary-hover);
+}
+
+.send-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* 页脚样式 */
 .app-footer {
   background-color: var(--bg-color);
-  border-top: 1px solid var(--border-color);
   padding: var(--space-sm) var(--space-lg);
   display: flex;
   justify-content: space-between;
@@ -107,7 +217,8 @@ html, body {
   font-size: var(--text-sm);
   color: var(--text-secondary);
   flex-shrink: 0;
-  margin-top: auto;
+  margin: 0;
+  border-top: none;
 }
 
 .footer-info {
@@ -156,8 +267,10 @@ html, body {
 
 .app-nav {
   display: flex;
-  gap: clamp(0.5rem, 1vw, 1rem);
+  gap: var(--space-xl);
   flex-wrap: wrap;
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .nav-button {
@@ -174,6 +287,21 @@ html, body {
   position: relative;
   white-space: nowrap;
   min-height: 28px;
+}
+
+/* 特定按钮样式 */
+.nav-button.chat-btn {
+  margin-right: 2rem !important;
+}
+
+.nav-button.upload-btn {
+  margin-left: 2rem !important;
+}
+
+/* 按钮间隔元素样式 */
+.button-spacer {
+  width: 4rem;
+  flex-shrink: 0;
 }
 
 .nav-button:hover {
@@ -271,17 +399,25 @@ html, body {
 
 /* 主要内容区域 */
 .app-main {
-  flex: 1 1 100%; /* 完全扩展并收缩 */
-  flex-basis: 0;
-  padding: var(--space-sm);
+  flex: 1;
+  padding: var(--space-sm) var(--space-sm) 0 var(--space-sm);
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: 0; /* 移除gap */
   width: 100%;
   min-width: 0;
   min-height: 0;
   position: relative;
-  overflow: auto;
+  overflow: hidden;
+  margin-bottom: 0; /* 确保没有底部margin */
+}
+
+/* 内容容器 */
+.content-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* 错误提示样式 */
@@ -561,7 +697,7 @@ html, body {
 .chat-layout {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--space-md);
+  gap: 0;
   height: 100%;
   min-height: 250px;
   width: 100%;
@@ -688,21 +824,21 @@ html, body {
 @media (min-width: 768px) {
   .chat-layout {
     grid-template-columns: 1fr 1fr;
-    height: calc(100vh - 180px);
+    height: 100%;
   }
 }
 
 .chat-section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: 0;
   min-height: 0;
   width: 100%;
   background-color: var(--card-bg, #ffffff);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
-  padding: calc(var(--space-xs, 8px) * 0.5);
+  padding: 0; /* 移除内边距，使容器紧贴 */
 }
 
 .video-section {
