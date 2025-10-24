@@ -61,6 +61,12 @@ async def startup_event():
             await redis_client.ping()
             logger.info("Redis connection established")
             await redis_client.close()
+        
+        # 初始化MCP工具注册表
+        from app.core.tool_registry import initialize as initialize_tool_registry
+        initialize_tool_registry()
+        logger.info("MCP tool registry initialized")
+        
     except Exception as e:
         logger.error(f"Startup check failed: {str(e)}")
 

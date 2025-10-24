@@ -26,6 +26,12 @@ volcengine==1.0.85
 modelscope==1.9.5
 funasr==1.0.4
 
+# LangChain 相关
+langchain==0.1.13
+langchain-community==0.0.29
+langchain-core==0.1.30
+langchain-experimental==0.0.52
+
 # 视频处理
 ffmpeg-python==0.2.0
 moviepy==1.0.3
