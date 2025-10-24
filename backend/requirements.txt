@@ -29,7 +29,7 @@ funasr==1.0.4
 # LangChain 相关
 langchain==0.1.13
 langchain-community==0.0.29
-langchain-core==0.1.30
+langchain-core==0.1.33
 langchain-experimental==0.0.52
 
 # 视频处理

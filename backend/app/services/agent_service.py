@@ -14,7 +14,7 @@ from functools import wraps
 
 # LangChain 导入
 from langchain_core.tools import tool as langchain_tool
-from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import SystemMessage, HumanMessage, AIMessage
@@ -229,13 +229,26 @@ class Agent:
         # 获取工具列表
         tools = convert_mcp_to_langchain_tools()
         
-        # 创建提示模板
+        # 创建提示模板（ReAct风格）
         system_prompt = f"""
 你是{self.config.name}，{self.config.role}。
 {self.config.description}
 
 你有以下工具可用：
-{[tool.name for tool in tools]}
+{[f"{tool.name}: {tool.description}" for tool in tools]}
+
+使用以下格式来回应：
+
+思考过程:
+[分析用户请求和可用工具，决定下一步操作]
+
+调用工具:
+工具名称 参数1=值1 参数2=值2
+
+或者，如果决定直接回答用户：
+
+直接回答:
+[你的回答内容]
 
 请根据用户请求，分析需要调用哪些工具来完成任务。
 如果你需要更多信息，请向用户提问。
@@ -249,8 +262,8 @@ class Agent:
             MessagesPlaceholder(variable_name="agent_scratchpad"),
         ])
         
-        # 创建工具调用Agent
-        agent = create_tool_calling_agent(
+        # 创建ReAct Agent (兼容当前LangChain版本的工具调用方式)
+        agent = create_react_agent(
             llm=self.llm,
             tools=tools,
             prompt=prompt
