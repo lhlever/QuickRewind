@@ -1,0 +1,11 @@
+# 1.安装PostgreSQL
+docker pull postgres
+docker run --name some-postgres -e POSTGRES_PASSWORD=admin -e POSTGRES_USER=admin -e POSTGRES_DB=mydb -p 5432:5432 -d postgres
+# 2.安装redis
+docker pull redis
+docker run --name redis-container -d -p 6379:6379 redis
+# 3.安装milvus
+wget https://raw.githubusercontent.com/milvus-io/milvus/v2.3.4/configs/milvus.yaml
+wget https://github.com/milvus-io/milvus/releases/download/v2.3.4/milvus-standalone-docker-compose.yml -O docker-compose.yml
+docker pull milvusdb/milvus:v2.3.4
+docker-compose up -d

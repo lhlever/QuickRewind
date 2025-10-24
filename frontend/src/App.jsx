@@ -59,6 +59,13 @@ function App() {
     setSearchResults(mockResults)
   }
 
+  // 处理预设问题点击
+  const handlePresetClick = (question) => {
+    setInputValue(question)
+    // 可选：自动发送问题
+    handleSend()
+  }
+
   // 处理视频上传完成后的回调
   const handleVideoAnalyzed = (data) => {
     setVideoData(data)
@@ -234,7 +241,7 @@ function App() {
             onUploadClick={handleUploadStart}
             messages={messages}
             isLoading={isLoading}
-            onPresetClick={(question) => setInputValue(question)}
+            onPresetClick={handlePresetClick}
           />
         )
       case 'upload':

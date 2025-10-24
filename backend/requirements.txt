@@ -1,0 +1,47 @@
+# Web框架
+fastapi==0.104.1
+uvicorn==0.24.0
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.0
+pydantic-settings==2.1.0
+
+# 火山引擎SDK（使用条件导入，开发环境可选安装）
+volcengine-python-sdk
+# pip3 install -U modelscope huggingface_hub
+# pip3 install -U funasr
+
+# 数据库
+pymilvus==2.3.4
+redis==5.0.1
+psycopg2-binary==2.9.9
+SQLAlchemy==2.0.23
+
+# 机器学习和AI相关
+volcengine==1.0.85
+# 机器学习和AI相关
+# transformers==4.36.0
+# 简化模型以适应CPU环境
+modelscope==1.9.5
+funasr==1.0.4
+
+# 视频处理
+ffmpeg-python==0.2.0
+moviepy==1.0.3
+
+# 异步任务
+celery==5.3.4
+redis==5.0.1
+
+# 工具库
+numpy==1.26.0
+pandas==2.1.1
+pillow==10.1.0
+python-magic==0.4.27
+httpx==0.25.0
+aioredis==2.0.1
+
+# 日志
+python-json-logger==2.0.7
+loguru==0.7.2
