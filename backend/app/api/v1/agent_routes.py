@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # 创建路由器
 router = APIRouter(
-    prefix="/api/v1/agent",
+    prefix="/agent",
     tags=["agent"]
 )
 
@@ -33,7 +33,7 @@ initialize_tool_registry()
 # 请求/响应模型
 class AgentRequest(BaseModel):
     """Agent请求模型"""
-    prompt: str = Field(..., description="用户提示")
+    message: str = Field(..., description="用户消息")
     config: Optional[AgentConfig] = Field(default=None, description="Agent配置")
 
 
@@ -61,40 +61,51 @@ class AvailableToolsResponse(BaseModel):
 @router.post("/chat", response_model=AgentResponse)
 async def chat_with_agent(request: AgentRequest) -> AgentResponse:
     """
-    与Agent进行对话
+    与Agent进行对话 - 使用REACT模式
     
-    接收用户提示，使用Agent处理并返回响应。
+    接收用户提示，使用REACT模式的Agent处理并返回响应。
     Agent会根据需要自动调用MCP注册的工具来完成任务。
+    REACT模式会让Agent思考、推理、决定是否调用工具，并最终生成回答。
     """
     import time
     start_time = time.time()
     
     try:
-        logger.info(f"Received agent request: {request.prompt[:100]}...")
+        logger.info(f"[REACT模式] 收到Agent请求: {request.message[:100]}...")
         
-        # 处理请求
+        # 处理请求 - 使用REACT模式
         response_text = await agent_service.process_request(
-            request=request.prompt,
+            request=request.message,
+            chat_history=None,  # 可以根据需要添加聊天历史支持
             config=request.config
         )
         
         processing_time = time.time() - start_time
         
-        logger.info(f"Agent response generated in {processing_time:.2f}s")
+        logger.info(f"[REACT模式] Agent响应生成完成，耗时: {processing_time:.2f}s")
+        logger.info(f"[REACT模式] 最终返回的回答: {response_text[:100]}...")
         
         return AgentResponse(
             success=True,
             response=response_text,
             processing_time=processing_time,
             metadata={
-                "prompt_length": len(request.prompt),
-                "response_length": len(response_text)
+                "message_length": len(request.message),
+                "response_length": len(response_text),
+                "agent_mode": "REACT"
             }
         )
         
     except Exception as e:
-        logger.error(f"Error processing agent request: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"处理请求时出错: {str(e)}")
+        error_msg = str(e)
+        logger.error(f"[REACT模式] 处理请求时出错: {error_msg}", exc_info=True)
+        # 即使出错也返回有意义的信息，让前端能看到错误
+        return AgentResponse(
+            success=False,
+            response=f"使用REACT模式处理请求时出错: {error_msg}",
+            processing_time=time.time() - start_time,
+            metadata={"error": error_msg}
+        )
 
 
 @router.get("/tools", response_model=AvailableToolsResponse)

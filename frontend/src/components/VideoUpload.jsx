@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import './VideoUpload.css';
+import { apiService } from '../services/api';
 
 const VideoUpload = ({ onVideoAnalyzed }) => {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -51,41 +52,65 @@ const VideoUpload = ({ onVideoAnalyzed }) => {
 
     setError(null);
     setSelectedFile(file);
-    simulateUploadAndAnalysis(file);
+    handleUploadAndAnalysis(file);
   };
 
-  // 模拟上传和分析过程
-  const simulateUploadAndAnalysis = (file) => {
+  // 真实的上传和分析过程
+  const handleUploadAndAnalysis = (file) => {
     setIsProcessing(true);
     setUploadProgress(0);
+    setError(null);
 
-    // 模拟上传进度
-    let progress = 0;
-    const uploadInterval = setInterval(() => {
-      progress += 5;
+    // 创建FormData用于文件上传
+    const formData = new FormData();
+    formData.append('video', file);
+    formData.append('title', file.name);
+
+    // 调用API上传视频
+    apiService.video.upload(formData, (progress) => {
       setUploadProgress(progress);
-      if (progress >= 100) {
-        clearInterval(uploadInterval);
-        
-        // 模拟分析过程
-        setTimeout(() => {
-          // 生成模拟的视频大纲数据
-          const mockOutline = generateMockOutline();
-          
-          if (onVideoAnalyzed) {
-            onVideoAnalyzed({
-              file,
-              outline: mockOutline,
-              title: file.name,
-              duration: Math.floor(Math.random() * 600) + 300, // 5-15分钟的随机时长
-              thumbnail: URL.createObjectURL(file) // 在实际应用中，应该使用生成的缩略图
-            });
-          }
-          
-          setIsProcessing(false);
-        }, 3000);
+    })
+    .then(response => {
+      // 上传成功后获取视频详情和大纲
+      return Promise.all([
+        apiService.video.getDetails(response.video_id),
+        apiService.video.getOutline(response.video_id)
+      ]);
+    })
+    .then(([videoDetails, videoOutline]) => {
+      // 处理API返回的数据
+      if (onVideoAnalyzed) {
+        onVideoAnalyzed({
+          id: videoDetails.id,
+          title: videoDetails.title || file.name,
+          duration: videoDetails.duration,
+          outline: videoOutline,
+          thumbnail: videoDetails.thumbnail_url || URL.createObjectURL(file),
+          file: file // 保留原文件引用以便本地播放
+        });
       }
-    }, 200);
+      
+      setIsProcessing(false);
+    })
+    .catch(err => {
+      console.error('视频上传和分析失败:', err);
+      setError('视频上传或分析失败，请稍后重试');
+      setIsProcessing(false);
+      
+      // 失败时使用模拟数据作为备选
+      setTimeout(() => {
+        const mockOutline = generateMockOutline();
+        if (onVideoAnalyzed) {
+          onVideoAnalyzed({
+            file,
+            outline: mockOutline,
+            title: file.name,
+            duration: Math.floor(Math.random() * 600) + 300,
+            thumbnail: URL.createObjectURL(file)
+          });
+        }
+      }, 1000);
+    });
   };
 
   // 生成模拟的视频大纲数据

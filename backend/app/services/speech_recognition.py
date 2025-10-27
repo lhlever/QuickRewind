@@ -6,7 +6,56 @@ import time
 
 logger = logging.getLogger(__name__)
 
-# 单独检查每个依赖项的可用性
+# 从应用配置中导入设置
+from app.core.config import settings
+
+# 语音识别引擎配置
+class SpeechRecognitionConfig:
+    """语音识别配置类 - 从应用设置中获取配置"""
+    @classmethod
+    def get_config(cls):
+        """获取配置字典"""
+        return {
+            "engine": settings.speech_engine,
+            "funasr": {
+                "model_name": settings.funasr_model_name,
+                "vad_model": settings.funasr_vad_model,
+                "punc_model": settings.funasr_punc_model
+            },
+            "whisper": {
+                "model": settings.whisper_model,
+                "language": settings.whisper_language,
+                "device": settings.whisper_device
+            }
+        }
+    
+    @classmethod
+    def get_engine(cls):
+        """获取引擎类型"""
+        return settings.speech_engine.lower()
+    
+    @classmethod
+    def get_funasr_config(cls):
+        """获取FunASR配置"""
+        return {
+            "model_name": settings.funasr_model_name,
+            "vad_model": settings.funasr_vad_model,
+            "punc_model": settings.funasr_punc_model
+        }
+    
+    @classmethod
+    def get_whisper_config(cls):
+        """获取Whisper配置"""
+        return {
+            "model": settings.whisper_model,
+            "language": settings.whisper_language,
+            "device": settings.whisper_device
+        }
+
+# 打印当前配置
+logger.info(f"语音识别配置: {SpeechRecognitionConfig.get_config()}")
+
+# 检查依赖项
 # 首先检查PyTorch
 HAS_TORCH = False
 try:
@@ -22,10 +71,14 @@ if HAS_TORCH:
     try:
         HAS_CUDA = torch.cuda.is_available()
         logger.info(f"CUDA 可用性: {HAS_CUDA}")
+        # 自动设置设备
+        if HAS_CUDA and settings.whisper_device == "cpu":
+            settings.whisper_device = "cuda"
+            logger.info("自动切换到CUDA设备")
     except Exception:
         logger.warning("无法检查CUDA可用性")
 
-# 检查FunASR（不需要PyTorch也可以尝试导入）
+# 检查FunASR
 HAS_FUNASR = False
 try:
     from funasr import AutoModel
@@ -34,29 +87,58 @@ try:
 except ImportError as e:
     logger.warning(f"FunASR 导入失败: {str(e)}")
 
-# 记录整体依赖状态
-if HAS_TORCH and HAS_FUNASR:
-    logger.info("语音识别所需的依赖已完全安装")
-elif not HAS_TORCH:
-    logger.warning("PyTorch 未安装，语音识别功能可能受限或使用替代方案")
-elif not HAS_FUNASR:
-    logger.warning("FunASR 未安装，语音识别功能将使用替代方案")
+# 检查Whisper
+HAS_WHISPER = False
+try:
+    import whisper
+    HAS_WHISPER = True
+    logger.info("Whisper 已安装")
+except ImportError as e:
+    logger.warning(f"Whisper 导入失败: {str(e)}")
+
+# 记录依赖状态
+logger.info(f"语音识别依赖状态 - PyTorch: {HAS_TORCH}, CUDA: {HAS_CUDA}, FunASR: {HAS_FUNASR}, Whisper: {HAS_WHISPER}")
 
 
 class SpeechRecognizer:
-    """语音识别服务，基于阿里FunASR（可选依赖）"""
+    """语音识别服务，支持FunASR和Whisper两种引擎"""
     
-    def __init__(self, model_name: str = "paraformer-zh",
-                 vad_model: str = "fsmn-vad",
-                 punc_model: str = "ct-punc"):
+    def __init__(self, engine: str = None,
+                 model_name: str = None,
+                 **kwargs):
+        """
+        初始化语音识别器
+        
+        Args:
+            engine: 引擎类型 ('funasr' 或 'whisper')，None则使用配置文件中的设置
+            model_name: 模型名称，None则使用配置文件中的设置
+            **kwargs: 其他配置参数
+        """
+        # 使用传入的引擎或配置文件中的引擎
+        self.engine = engine.lower() if engine else SpeechRecognitionConfig.get_engine()
+        
+        # 模型和配置
         self.model = None
-        self.model_name = model_name
-        self.vad_model = vad_model
-        self.punc_model = punc_model
-        self._load_model()
+        self.model_type = "none"
+        
+        # 加载相应引擎
+        if self.engine == "whisper":
+            whisper_config = SpeechRecognitionConfig.get_whisper_config()
+            self.model_name = model_name or whisper_config["model"]
+            self.language = kwargs.get("language", whisper_config["language"])
+            self.device = kwargs.get("device", whisper_config["device"])
+            self._load_whisper_model()
+        else:  # 默认使用funasr
+            funasr_config = SpeechRecognitionConfig.get_funasr_config()
+            self.model_name = model_name or funasr_config["model_name"]
+            self.vad_model = kwargs.get("vad_model", funasr_config["vad_model"])
+            self.punc_model = kwargs.get("punc_model", funasr_config["punc_model"])
+            self._load_funasr_model()
+        
+        logger.info(f"语音识别器初始化完成，引擎: {self.engine}，模型: {self.model_name}")
     
-    def _load_model(self):
-        """加载语音识别模型"""
+    def _load_funasr_model(self):
+        """加载FunASR语音识别模型"""
         if not HAS_FUNASR:
             logger.warning("无法加载FunASR模型，因为依赖未安装")
             return
@@ -79,21 +161,71 @@ class SpeechRecognizer:
                 # 不同模型可能有不同的移动到GPU的方法
                 logger.info("将模型移至GPU")
             
+            self.model_type = "funasr"
             load_time = time.time() - start_time
             logger.info(f"FunASR模型加载完成，耗时: {load_time:.2f}秒")
         except Exception as e:
             logger.error(f"加载FunASR模型失败: {str(e)}")
             self.model = None
     
-    def transcribe(self, audio_path: str, batch_size_s: int = 300,
-                   output_dir: Optional[str] = None) -> Dict[str, Any]:
+    def _load_whisper_model(self):
+        """加载Whisper语音识别模型"""
+        if not HAS_WHISPER:
+            logger.warning("无法加载Whisper模型，因为依赖未安装")
+            return
+            
+        try:
+            logger.info(f"开始加载Whisper模型: {self.model_name}")
+            start_time = time.time()
+            
+            # 加载Whisper模型
+            self.model = whisper.load_model(
+                name=self.model_name,
+                device=self.device
+            )
+            
+            self.model_type = "whisper"
+            load_time = time.time() - start_time
+            logger.info(f"Whisper模型加载完成，耗时: {load_time:.2f}秒")
+        except Exception as e:
+            logger.error(f"加载Whisper模型失败: {str(e)}")
+            self.model = None
+    
+    def switch_engine(self, engine: str, model_name: str = None, **kwargs):
+        """
+        切换语音识别引擎
+        
+        Args:
+            engine: 新的引擎类型 ('funasr' 或 'whisper')
+            model_name: 新的模型名称，None则使用默认配置
+            **kwargs: 其他配置参数
+        """
+        logger.info(f"切换引擎从 {self.engine} 到 {engine}")
+        self.engine = engine.lower()
+        self.model = None
+        
+        if self.engine == "whisper":
+            whisper_config = SpeechRecognitionConfig.get_whisper_config()
+            self.model_name = model_name or whisper_config["model"]
+            self.language = kwargs.get("language", whisper_config["language"])
+            self.device = kwargs.get("device", whisper_config["device"])
+            self._load_whisper_model()
+        else:  # 默认使用funasr
+            funasr_config = SpeechRecognitionConfig.get_funasr_config()
+            self.model_name = model_name or funasr_config["model_name"]
+            self.vad_model = kwargs.get("vad_model", funasr_config["vad_model"])
+            self.punc_model = kwargs.get("punc_model", funasr_config["punc_model"])
+            self._load_funasr_model()
+    
+    def transcribe(self, audio_path: str, **kwargs) -> Dict[str, Any]:
         """执行语音识别
         
         Args:
             audio_path: 音频文件路径
-            batch_size_s: 批处理大小（秒）
-            output_dir: 输出目录
-            
+            **kwargs: 其他参数，根据引擎类型不同而不同
+                - FunASR参数: batch_size_s, hotword, output_dir
+                - Whisper参数: language, temperature, task (transcribe/translate)
+        
         Returns:
             识别结果，包含原始文本和时间戳信息
         """
@@ -106,26 +238,58 @@ class SpeechRecognizer:
             return self._fallback_transcribe(audio_path)
         
         try:
-            logger.info(f"开始处理音频文件: {audio_path}")
+            logger.info(f"开始处理音频文件: {audio_path} (引擎: {self.engine})")
             start_time = time.time()
             
-            # 执行识别 - 使用官方推荐的参数
-            result = self.model.generate(
-                input=audio_path,
-                batch_size_s=batch_size_s,
-                hotword='',  # 可以根据需要设置热词
-                # output_dir=output_dir  # 根据FunASR版本决定是否需要
-            )
+            if self.engine == "whisper" and self.model_type == "whisper":
+                # 使用Whisper进行识别
+                result = self._transcribe_with_whisper(audio_path, **kwargs)
+            else:
+                # 使用FunASR进行识别
+                result = self._transcribe_with_funasr(audio_path, **kwargs)
             
             process_time = time.time() - start_time
             logger.info(f"语音识别完成，耗时: {process_time:.2f}秒")
             
-            # 处理结果
-            return self._process_result(result)
+            return result
         except Exception as e:
             logger.error(f"语音识别失败: {str(e)}")
             # 失败时使用回退方案
             return self._fallback_transcribe(audio_path)
+    
+    def _transcribe_with_funasr(self, audio_path: str, **kwargs) -> Dict[str, Any]:
+        """使用FunASR执行语音识别"""
+        batch_size_s = kwargs.get("batch_size_s", 300)
+        hotword = kwargs.get("hotword", "")
+        output_dir = kwargs.get("output_dir", None)
+        
+        # 执行识别 - 使用官方推荐的参数
+        result = self.model.generate(
+            input=audio_path,
+            batch_size_s=batch_size_s,
+            hotword=hotword,
+            # output_dir=output_dir  # 根据FunASR版本决定是否需要
+        )
+        
+        # 处理结果
+        return self._process_funasr_result(result)
+    
+    def _transcribe_with_whisper(self, audio_path: str, **kwargs) -> Dict[str, Any]:
+        """使用Whisper执行语音识别"""
+        language = kwargs.get("language", self.language)
+        temperature = kwargs.get("temperature", 0.0)
+        task = kwargs.get("task", "transcribe")  # transcribe 或 translate
+        
+        # 执行Whisper识别
+        result = self.model.transcribe(
+            audio_path,
+            language=language,
+            temperature=temperature,
+            task=task
+        )
+        
+        # 处理结果
+        return self._process_whisper_result(result)
     
     def _fallback_transcribe(self, audio_path: str) -> Dict[str, Any]:
         """回退的语音识别方案（当主模型不可用时）
@@ -153,11 +317,11 @@ class SpeechRecognizer:
             "warning": "语音识别服务不可用，请安装PyTorch和FunASR依赖"
         }
     
-    def _process_result(self, raw_result: Any) -> Dict[str, Any]:
-        """处理识别结果
+    def _process_funasr_result(self, raw_result: Any) -> Dict[str, Any]:
+        """处理FunASR识别结果
         
         Args:
-            raw_result: 原始识别结果
+            raw_result: FunASR的原始识别结果
             
         Returns:
             结构化的识别结果
@@ -190,11 +354,53 @@ class SpeechRecognizer:
             return {
                 "text": full_text.strip(),
                 "segments": transcript_segments,
-                "total_segments": len(transcript_segments)
+                "total_segments": len(transcript_segments),
+                "engine": "funasr",
+                "model": self.model_name
             }
         except Exception as e:
-            logger.error(f"处理识别结果失败: {str(e)}")
-            # 返回错误信息
+            logger.error(f"处理FunASR识别结果失败: {str(e)}")
+            return {
+                "text": "",
+                "segments": [],
+                "total_segments": 0,
+                "error": str(e)
+            }
+    
+    def _process_whisper_result(self, raw_result: Any) -> Dict[str, Any]:
+        """处理Whisper识别结果
+        
+        Args:
+            raw_result: Whisper的原始识别结果
+            
+        Returns:
+            结构化的识别结果
+        """
+        try:
+            # Whisper的结果格式相对固定
+            transcript_segments = []
+            full_text = raw_result.get("text", "").strip()
+            
+            # 处理时间戳和段落
+            for segment in raw_result.get("segments", []):
+                segment_info = {
+                    "text": segment.get("text", "").strip(),
+                    "start_time": segment.get("start", 0.0),
+                    "end_time": segment.get("end", 0.0),
+                    "confidence": segment.get("confidence", 0.0) if "confidence" in segment else 1.0
+                }
+                transcript_segments.append(segment_info)
+            
+            return {
+                "text": full_text,
+                "segments": transcript_segments,
+                "total_segments": len(transcript_segments),
+                "engine": "whisper",
+                "model": self.model_name,
+                "language": raw_result.get("language", self.language)
+            }
+        except Exception as e:
+            logger.error(f"处理Whisper识别结果失败: {str(e)}")
             return {
                 "text": "",
                 "segments": [],
@@ -289,15 +495,30 @@ class SpeechRecognizer:
     
     def get_model_info(self) -> Dict[str, Any]:
         """获取模型信息和依赖状态"""
-        return {
+        info = {
+            "engine": self.engine,
             "model_name": self.model_name if self.model else "not loaded",
-            "vad_model": self.vad_model,
-            "punc_model": self.punc_model,
+            "model_loaded": self.model is not None,
             "has_torch": HAS_TORCH,
             "has_cuda": HAS_CUDA,
             "has_funasr": HAS_FUNASR,
-            "model_loaded": self.model is not None
+            "has_whisper": HAS_WHISPER,
+            "config": SpeechRecognitionConfig.get_config()
         }
+        
+        # 添加引擎特定信息
+        if self.engine == "funasr":
+            info.update({
+                "vad_model": self.vad_model,
+                "punc_model": self.punc_model
+            })
+        else:
+            info.update({
+                "language": self.language,
+                "device": self.device
+            })
+        
+        return info
 
 
 # 创建全局语音识别服务实例

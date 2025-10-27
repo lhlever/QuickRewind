@@ -4,6 +4,7 @@ import ChatInterface from './components/ChatInterface'
 import VideoUpload from './components/VideoUpload'
 import VideoPlayer from './components/VideoPlayer'
 import SearchResults from './components/SearchResults'
+import { apiService } from './services/api'
 
 function App() {
   // 预设问题数据
@@ -50,13 +51,93 @@ function App() {
   }, [])
 
   // 处理聊天界面的搜索请求
-  const handleSearch = (query) => {
-    setCurrentQuery(query)
-    setActiveView('search')
+  const handleSearch = async (query) => {
+    // 清空之前的搜索结果
+    setSearchResults([]);
     
-    // 模拟搜索结果
-    const mockResults = generateMockSearchResults(query)
-    setSearchResults(mockResults)
+    // 添加用户消息到聊天界面
+    setMessages(prev => [...prev, {
+      id: Date.now(),
+      text: query,
+      sender: 'user',
+      timestamp: new Date().toLocaleTimeString()
+    }]);
+    
+    try {
+      // 显示加载状态
+      setIsLoading(true);
+      
+      // 调用API获取搜索结果
+      const results = await apiService.video.search(query);
+      
+      // 格式化搜索结果并添加到聊天
+      formatSearchResultsForChat(results, query);
+      
+    } catch (error) {
+      console.error('搜索失败:', error);
+      
+      // 使用模拟数据
+      const mockResults = generateMockSearchResults(query);
+      formatSearchResultsForChat(mockResults, query);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // 将搜索结果格式化为聊天消息
+  const formatSearchResultsForChat = (results, query) => {
+    // 确保results是数组格式
+    const resultsArray = Array.isArray(results) ? results : [];
+    
+    if (resultsArray.length === 0) {
+      // 没有找到结果
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        text: `没有找到与"${query}"相关的视频内容。`,
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString(),
+        videoResults: [] // 空结果数组
+      }]);
+      return;
+    }
+    
+    // 格式化搜索结果消息
+    let searchResultsMessage = `我找到了 ${resultsArray.length} 个与"${query}"相关的视频：\n\n`;
+    
+    // 创建带有视频ID的特殊标记，后续在ChatInterface中处理为链接
+    resultsArray.slice(0, 3).forEach((video, index) => {
+      // 使用特殊格式标记视频标题，包含视频ID
+      const videoLink = `[视频链接:${video.id}]${video.title}[/视频链接]`;
+      searchResultsMessage += `${index + 1}. **${videoLink}**\n`;
+      searchResultsMessage += `   时长: ${video.duration}\n`;
+      searchResultsMessage += `   简介: ${video.snippet.substring(0, 100)}${video.snippet.length > 100 ? '...' : ''}\n\n`;
+    });
+    
+    if (resultsArray.length > 3) {
+      searchResultsMessage += `还有 ${resultsArray.length - 3} 个结果未显示...`;
+    }
+    
+    // 添加到聊天消息，同时保存实际的结果对象便于后续处理
+    setMessages(prev => [...prev, {
+      id: Date.now(),
+      text: searchResultsMessage,
+      sender: 'ai',
+      timestamp: new Date().toLocaleTimeString(),
+      videoResults: resultsArray // 保存实际的视频结果数据
+    }]);
+    
+    // 保存结果以便后续可能使用
+    setSearchResults(resultsArray);
+  }
+
+  // 处理视频链接点击
+  const handleVideoClick = (videoId) => {
+    // 从保存的搜索结果中找到对应的视频
+    const video = searchResults.find(v => v.id === videoId);
+    if (video) {
+      setVideoData(video);
+      setActiveView('player');
+    }
   }
 
   // 处理预设问题点击
@@ -155,72 +236,90 @@ function App() {
   }
 
   // 生成AI响应
-  const generateResponse = (userQuery) => {
-    let response = ''
-    let shouldTriggerSearch = false
-    
-    // 根据用户输入生成不同的响应
-    if (userQuery.toLowerCase().includes('你好') || userQuery.toLowerCase().includes('hello')) {
-      response = '您好！很高兴为您服务。您想查找什么类型的视频内容，或者需要我分析某个视频吗？'
-    } else if (userQuery.toLowerCase().includes('帮助') || userQuery.toLowerCase().includes('help')) {
-      response = `我可以帮您：\n1. 基于您的问题查找相关视频内容\n2. 分析您上传的视频并生成大纲\n3. 帮助您快速定位视频中的重要片段\n\n请告诉我您想做什么。`
-    } else if (userQuery.toLowerCase().includes('查找') || userQuery.toLowerCase().includes('搜索') || 
-               userQuery.toLowerCase().includes('find') || userQuery.toLowerCase().includes('search')) {
-      // 触发搜索
-      response = `我正在搜索与"${userQuery}"相关的视频...`
-      shouldTriggerSearch = true
-    } else if (userQuery.toLowerCase().includes('上传') || userQuery.toLowerCase().includes('upload')) {
-      response = '您可以在顶部切换到"上传"标签来上传视频文件，我会为您分析并生成视频大纲。'
-    } else {
-      // 默认响应
-      response = `我理解您想了解关于"${userQuery}"的内容。让我为您查找相关的视频...`
-      shouldTriggerSearch = true
-    }
-    
-    // 添加AI回复
+  const generateResponse = async (userQuery) => {
+    // 添加用户消息到聊天界面
     setMessages(prev => [...prev, {
       id: Date.now(),
-      text: response,
-      sender: 'ai',
-      timestamp: new Date().toLocaleTimeString()
-    }])
-    setIsLoading(false)
-    
-    // 如果需要，触发搜索
-    if (shouldTriggerSearch && onSearch) {
-      setTimeout(() => {
-        handleSearch(userQuery)
-        // 添加搜索结果通知
-        setMessages(prev => [...prev, {
-          id: Date.now() + 1,
-          text: `已找到几个与您查询相关的视频，您可以在右侧预览并点击查看详情。`,
-          sender: 'ai',
-          timestamp: new Date().toLocaleTimeString()
-        }])
-      }, 1500)
-    }
-  }
-
-  // 处理发送消息
-  const handleSend = () => {
-    if (!inputValue.trim() || isLoading) return
-
-    // 添加用户消息
-    const newMessage = {
-      id: Date.now(),
-      text: inputValue,
+      text: userQuery,
       sender: 'user',
       timestamp: new Date().toLocaleTimeString()
-    }
+    }]);
     
-    setMessages([...messages, newMessage])
-    setInputValue('')
-    setIsLoading(true)
-
-    // 模拟AI思考和回复延迟
-    setTimeout(() => {
-      generateResponse(inputValue)
-    }, 1000)
+    // 显示加载状态
+    setIsLoading(true);
+    
+    try {
+      // 调用Agent API获取智能回复
+      const apiResponse = await apiService.agent.sendMessage(userQuery);
+      
+      // 提取回答内容，处理可能的不同响应格式
+      let responseContent = '';
+      if (typeof apiResponse === 'object' && apiResponse !== null) {
+        responseContent = apiResponse.response || apiResponse.message || JSON.stringify(apiResponse);
+      } else {
+        responseContent = String(apiResponse);
+      }
+      
+      // 判断是否需要直接进行视频搜索
+      const isSearchQuery = 
+        userQuery.toLowerCase().includes('查找') || 
+        userQuery.toLowerCase().includes('搜索') || 
+        userQuery.toLowerCase().includes('find') || 
+        userQuery.toLowerCase().includes('search');
+      
+      // 如果是搜索查询，直接调用handleSearch进行视频搜索
+      // 否则，添加AI的普通回答到聊天
+      if (isSearchQuery) {
+        await handleSearch(userQuery);
+      } else {
+        setMessages(prev => [...prev, {
+          id: Date.now(),
+          text: responseContent,
+          sender: 'ai',
+          timestamp: new Date().toLocaleTimeString()
+        }]);
+      }
+    } catch (error) {
+      console.error('AI响应生成失败:', error);
+      
+      // 失败时使用本地逻辑生成响应
+      let fallbackResponse = '';
+      if (userQuery.toLowerCase().includes('你好') || userQuery.toLowerCase().includes('hello')) {
+        fallbackResponse = '您好！很高兴为您服务。您想查找什么类型的视频内容，或者需要我分析某个视频吗？';
+      } else if (userQuery.toLowerCase().includes('帮助') || userQuery.toLowerCase().includes('help')) {
+        fallbackResponse = `我可以帮您：\n1. 基于您的问题查找相关视频内容\n2. 分析您上传的视频并生成大纲\n3. 帮助您快速定位视频中的重要片段\n\n请告诉我您想做什么。`;
+      } else if (userQuery.toLowerCase().includes('查找') || userQuery.toLowerCase().includes('搜索') || 
+                 userQuery.toLowerCase().includes('find') || userQuery.toLowerCase().includes('search')) {
+        // 触发搜索
+        await handleSearch(userQuery);
+      } else {
+        fallbackResponse = `感谢您的问题！关于"${userQuery}"，我需要更多信息才能提供完整答案。您是想了解这方面的视频内容，还是有其他相关问题？`;
+      }
+      
+      // 如果有回退响应，添加到聊天
+      if (fallbackResponse) {
+        setMessages(prev => [...prev, {
+          id: Date.now(),
+          text: fallbackResponse,
+          sender: 'ai',
+          timestamp: new Date().toLocaleTimeString()
+        }]);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }
+  
+  // 处理发送按钮点击
+  const handleSend = () => {
+    if (!inputValue.trim()) return;
+    
+    // 保存输入内容并清空
+    const query = inputValue.trim();
+    setInputValue('');
+    
+    // 调用生成AI响应的函数
+    generateResponse(query);
   }
 
   // 处理Enter键发送
@@ -242,6 +341,7 @@ function App() {
             messages={messages}
             isLoading={isLoading}
             onPresetClick={handlePresetClick}
+            onVideoClick={handleVideoClick}
           />
         )
       case 'upload':

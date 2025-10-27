@@ -53,6 +53,19 @@ class Settings(BaseSettings):
     workers: int = 4
     batch_size: int = 300
     
+    # 语音识别配置
+    speech_engine: str = "funasr"  # whisper 或 funasr
+    
+    # FunASR配置
+    funasr_model_name: str = "paraformer-zh"
+    funasr_vad_model: str = "fsmn-vad"
+    funasr_punc_model: str = "ct-punc"
+    
+    # Whisper配置
+    whisper_model: str = "small"  # tiny, base, small, medium, large
+    whisper_language: str = "zh"
+    whisper_device: str = "cpu"
+    
     # Celery配置
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/0"

@@ -34,9 +34,23 @@ logger = logging.getLogger(__name__)
             required=True
         ),
         ToolParameter(
+            name="engine",
+            type="string",
+            description="语音识别引擎: whisper 或 funasr",
+            required=False,
+            default="funasr"
+        ),
+        ToolParameter(
+            name="model_name",
+            type="string",
+            description="模型名称/大小: 对于whisper可选(tiny/base/small/medium/large)，对于funasr可选(paraformer-zh等)",
+            required=False,
+            default=None
+        ),
+        ToolParameter(
             name="batch_size_s",
             type="number",
-            description="批处理大小（秒）",
+            description="批处理大小（秒），仅FunASR引擎使用",
             required=False,
             default=300
         ),
@@ -46,27 +60,77 @@ logger = logging.getLogger(__name__)
             description="输出目录",
             required=False,
             default=None
+        ),
+        ToolParameter(
+            name="language",
+            type="string",
+            description="语言代码，仅Whisper引擎使用",
+            required=False,
+            default="zh"
         )
     ],
     returns={
         "text": "识别出的完整文本",
         "segments": "包含时间戳的识别段落",
-        "total_segments": "段落总数"
+        "total_segments": "段落总数",
+        "engine": "使用的语音识别引擎",
+        "model": "使用的模型名称"
     },
     tags=["audio", "speech", "transcription"]
 )
-async def transcribe_audio_tool(audio_path: str, batch_size_s: int = 300, output_dir: str = None) -> Dict[str, Any]:
+async def transcribe_audio_tool(audio_path: str, engine: str = "funasr", model_name: str = None, 
+                              batch_size_s: int = 300, output_dir: str = None, 
+                              language: str = "zh") -> Dict[str, Any]:
     """
     MCP工具：音频转文本
     
-    将语音识别服务封装为MCP兼容的异步工具
+    将语音识别服务封装为MCP兼容的异步工具，支持选择不同的语音识别引擎和模型
+    
+    Args:
+        audio_path: 音频文件路径
+        engine: 语音识别引擎，可选 'whisper' 或 'funasr'
+        model_name: 模型名称/大小，根据引擎不同有不同选项
+        batch_size_s: 批处理大小（秒），仅FunASR使用
+        output_dir: 输出目录
+        language: 语言代码，仅Whisper引擎使用
+        
+    Returns:
+        包含识别文本和时间戳的结构化结果
     """
     # 使用线程池执行同步操作，避免阻塞事件循环
     loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(
-        None, 
-        lambda: speech_recognizer.transcribe(audio_path, batch_size_s, output_dir)
-    )
+    
+    # 根据参数调用相应的语音识别功能
+    # 如果指定了不同的引擎，需要创建新的识别器实例
+    if engine != speech_recognizer.engine or (model_name and model_name != speech_recognizer.model_name):
+        # 创建新的识别器实例
+        from app.services.speech_recognition import SpeechRecognizer
+        recognizer = SpeechRecognizer(engine=engine, model_name=model_name)
+        
+        # 根据引擎类型传递相应参数
+        if engine == "whisper":
+            result = await loop.run_in_executor(
+                None, 
+                lambda: recognizer.transcribe(audio_path, language=language)
+            )
+        else:
+            result = await loop.run_in_executor(
+                None, 
+                lambda: recognizer.transcribe(audio_path, batch_size_s=batch_size_s, output_dir=output_dir)
+            )
+    else:
+        # 使用全局识别器实例
+        if engine == "whisper":
+            result = await loop.run_in_executor(
+                None, 
+                lambda: speech_recognizer.transcribe(audio_path, language=language)
+            )
+        else:
+            result = await loop.run_in_executor(
+                None, 
+                lambda: speech_recognizer.transcribe(audio_path, batch_size_s=batch_size_s, output_dir=output_dir)
+            )
+    
     return result
 
 
