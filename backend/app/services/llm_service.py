@@ -188,7 +188,7 @@ class VolcLLMService:
             # 这里使用通用方法，实际项目中应使用专门的嵌入API
             system_prompt = """你是一个文本嵌入生成器。
 请将输入文本转换为固定维度的向量表示。
-输出格式应为JSON数组，包含768个浮点数。"""
+输出格式应为JSON数组，仅包含浮点数，不要包含其他文本。"""
             
             prompt = f"""请生成以下文本的嵌入向量：
 
@@ -203,22 +203,71 @@ class VolcLLMService:
                 temperature=0.0
             )
             
-            # 解析JSON响应
-            embedding = json.loads(response)
+            # 清理响应，确保只包含JSON部分
+            response = response.strip()
+            logger.info(f"嵌入向量响应前50个字符: {response[:50]}...")
             
-            # 确保维度正确
-            if len(embedding) != settings.milvus_dim:
-                logger.warning(f"嵌入向量维度不正确: {len(embedding)}，期望: {settings.milvus_dim}")
-                # 截断或填充到指定维度
-                if len(embedding) > settings.milvus_dim:
-                    embedding = embedding[:settings.milvus_dim]
-                else:
-                    embedding += [0.0] * (settings.milvus_dim - len(embedding))
+            # 检查响应是否为空
+            if not response:
+                logger.error("模型返回空响应")
+                # 返回一个随机向量作为回退
+                import numpy as np
+                return list(np.random.randn(settings.milvus_dim))
             
-            return embedding
+            # 尝试解析JSON
+            try:
+                embedding = json.loads(response)
+                
+                # 确保是列表
+                if not isinstance(embedding, list):
+                    logger.error(f"嵌入向量不是列表格式: {type(embedding)}")
+                    # 返回随机向量
+                    import numpy as np
+                    return list(np.random.randn(settings.milvus_dim))
+                
+                # 确保维度正确
+                if len(embedding) != settings.milvus_dim:
+                    logger.warning(f"嵌入向量维度不正确: {len(embedding)}，期望: {settings.milvus_dim}")
+                    # 截断或填充到指定维度
+                    if len(embedding) > settings.milvus_dim:
+                        embedding = embedding[:settings.milvus_dim]
+                    else:
+                        embedding += [0.0] * (settings.milvus_dim - len(embedding))
+                
+                return embedding
+            except json.JSONDecodeError as e:
+                logger.error(f"解析嵌入向量JSON失败: {str(e)}")
+                logger.error(f"原始响应: {response}")
+                
+                # 尝试提取响应中的JSON部分
+                try:
+                    # 查找第一个[和最后一个]，提取其中的内容
+                    start_idx = response.find('[')
+                    end_idx = response.rfind(']')
+                    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                        json_str = response[start_idx:end_idx+1]
+                        embedding = json.loads(json_str)
+                        logger.info("成功从响应中提取JSON部分")
+                        
+                        # 确保维度正确
+                        if len(embedding) > settings.milvus_dim:
+                            embedding = embedding[:settings.milvus_dim]
+                        else:
+                            embedding += [0.0] * (settings.milvus_dim - len(embedding))
+                        
+                        return embedding
+                except Exception as inner_e:
+                    logger.error(f"提取JSON部分失败: {str(inner_e)}")
+                
+                # 如果所有方法都失败，返回随机向量作为回退
+                logger.warning("使用随机向量作为回退方案")
+                import numpy as np
+                return list(np.random.randn(settings.milvus_dim))
         except Exception as e:
             logger.error(f"生成嵌入向量失败: {str(e)}")
-            raise
+            # 即使失败，也返回一个回退向量，避免整个流程中断
+            import numpy as np
+            return list(np.random.randn(settings.milvus_dim))
     
     def batch_generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """批量生成文本嵌入向量

@@ -44,8 +44,13 @@ const VideoPlayer = forwardRef(({ video, initialTime }, ref) => {
 
   // 处理初始时间设置
   useEffect(() => {
-    if (initialTime !== null && videoRef.current) {
-      videoRef.current.currentTime = initialTime
+    if (videoRef.current && initialTime !== null && 
+        typeof initialTime === 'number' && isFinite(initialTime) && initialTime >= 0) {
+      try {
+        videoRef.current.currentTime = initialTime
+      } catch (error) {
+        console.warn('Failed to set currentTime:', error)
+      }
     }
   }, [initialTime])
 

@@ -67,6 +67,13 @@ logger = logging.getLogger(__name__)
             description="语言代码，仅Whisper引擎使用",
             required=False,
             default="zh"
+        ),
+        ToolParameter(
+            name="force_cpu",
+            type="boolean",
+            description="是否强制使用CPU运行模型，设置为true可在无GPU环境中运行",
+            required=False,
+            default=False
         )
     ],
     returns={
@@ -80,9 +87,8 @@ logger = logging.getLogger(__name__)
 )
 async def transcribe_audio_tool(audio_path: str, engine: str = "funasr", model_name: str = None, 
                               batch_size_s: int = 300, output_dir: str = None, 
-                              language: str = "zh") -> Dict[str, Any]:
-    """
-    MCP工具：音频转文本
+                              language: str = "zh", force_cpu: bool = False) -> Dict[str, Any]:
+    """MCP工具：音频转文本
     
     将语音识别服务封装为MCP兼容的异步工具，支持选择不同的语音识别引擎和模型
     
@@ -93,7 +99,8 @@ async def transcribe_audio_tool(audio_path: str, engine: str = "funasr", model_n
         batch_size_s: 批处理大小（秒），仅FunASR使用
         output_dir: 输出目录
         language: 语言代码，仅Whisper引擎使用
-        
+        force_cpu: 是否强制使用CPU运行模型
+    
     Returns:
         包含识别文本和时间戳的结构化结果
     """
@@ -105,7 +112,7 @@ async def transcribe_audio_tool(audio_path: str, engine: str = "funasr", model_n
     if engine != speech_recognizer.engine or (model_name and model_name != speech_recognizer.model_name):
         # 创建新的识别器实例
         from app.services.speech_recognition import SpeechRecognizer
-        recognizer = SpeechRecognizer(engine=engine, model_name=model_name)
+        recognizer = SpeechRecognizer(engine=engine, model_name=model_name, force_cpu=force_cpu)
         
         # 根据引擎类型传递相应参数
         if engine == "whisper":
@@ -119,17 +126,32 @@ async def transcribe_audio_tool(audio_path: str, engine: str = "funasr", model_n
                 lambda: recognizer.transcribe(audio_path, batch_size_s=batch_size_s, output_dir=output_dir)
             )
     else:
-        # 使用全局识别器实例
-        if engine == "whisper":
-            result = await loop.run_in_executor(
-                None, 
-                lambda: speech_recognizer.transcribe(audio_path, language=language)
-            )
+        # 如果需要强制使用CPU，但当前识别器没有设置该选项，则创建新实例
+        if force_cpu and not hasattr(speech_recognizer, 'force_cpu') or speech_recognizer.force_cpu != force_cpu:
+            from app.services.speech_recognition import SpeechRecognizer
+            recognizer = SpeechRecognizer(engine=engine, model_name=speech_recognizer.model_name, force_cpu=force_cpu)
+            if engine == "whisper":
+                result = await loop.run_in_executor(
+                    None, 
+                    lambda: recognizer.transcribe(audio_path, language=language)
+                )
+            else:
+                result = await loop.run_in_executor(
+                    None, 
+                    lambda: recognizer.transcribe(audio_path, batch_size_s=batch_size_s, output_dir=output_dir)
+                )
         else:
-            result = await loop.run_in_executor(
-                None, 
-                lambda: speech_recognizer.transcribe(audio_path, batch_size_s=batch_size_s, output_dir=output_dir)
-            )
+            # 使用全局识别器实例
+            if engine == "whisper":
+                result = await loop.run_in_executor(
+                    None, 
+                    lambda: speech_recognizer.transcribe(audio_path, language=language)
+                )
+            else:
+                result = await loop.run_in_executor(
+                    None, 
+                    lambda: speech_recognizer.transcribe(audio_path, batch_size_s=batch_size_s, output_dir=output_dir)
+                )
     
     return result
 
@@ -434,8 +456,131 @@ def register_prompt_templates():
     mcp_server.register_prompt_template("video_analysis", video_analysis_template)
     mcp_server.register_prompt_template("summary", summary_template)
     mcp_server.register_prompt_template("qa", qa_template)
-    
+      
     logger.info("Prompt templates registered to MCP server")
+    
+# 视频向量搜索工具
+@tool(
+    name="search_video_by_vector",
+    description="使用向量相似度搜索视频内容",
+    parameters=[
+        ToolParameter(
+            name="query",
+            type="string",
+            description="搜索查询文本",
+            required=True
+        ),
+        ToolParameter(
+            name="top_k",
+            type="number",
+            description="返回结果数量，默认10",
+            required=False,
+            default=10
+        )
+    ],
+    returns={
+        "results": "搜索结果列表",
+        "total": "结果总数"
+    },
+    tags=["video", "search", "vector", "mcp"]
+)
+async def search_video_by_vector_tool(query: str, top_k: int = 10) -> Dict[str, Any]:
+    """
+    MCP工具：视频向量搜索
+    
+    使用查询文本生成向量，然后在Milvus向量数据库中搜索相似的视频内容。
+    返回包含视频ID、匹配文本和时间戳的搜索结果。
+    """
+    import numpy as np
+    from sqlalchemy.orm import Session
+    from app.core.database import SessionLocal
+    from app.core.milvus import milvus_context
+    from app.services.llm_service import llm_service
+    from app.models.video import Video
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    db = SessionLocal()
+    
+    try:
+        logger.info(f"开始向量搜索，查询: {query}, top_k: {top_k}")
+        
+        # 为查询生成向量
+        query_embedding = llm_service.generate_embedding(query)
+        logger.info(f"查询向量生成完成，维度: {len(query_embedding)}")
+        
+        # 使用Milvus进行向量搜索
+        with milvus_context() as mc:
+            # 搜索所有类型的内容（转录、摘要和字幕段落）
+            search_results = mc.search_vectors(
+                query_vector=np.array(query_embedding),
+                top_k=top_k,
+                filters=None  # 不限制内容类型，搜索所有内容
+            )
+        
+        logger.info(f"Milvus搜索完成，返回 {len(search_results)} 个向量结果")
+        
+        # 去重处理，按视频ID分组
+        video_groups = {}
+        for result in search_results:
+            video_id = result["video_id"]
+            if video_id not in video_groups:
+                video_groups[video_id] = {
+                    "video_id": video_id,
+                    "matches": [],
+                    "best_match_score": result["distance"],
+                    "best_match_content": result["content"],
+                    "best_match_start_time": result["start_time"],
+                    "best_match_end_time": result["end_time"]
+                }
+            else:
+                # 更新最佳匹配（距离最小的）
+                if result["distance"] < video_groups[video_id]["best_match_score"]:
+                    video_groups[video_id]["best_match_score"] = result["distance"]
+                    video_groups[video_id]["best_match_content"] = result["content"]
+                    video_groups[video_id]["best_match_start_time"] = result["start_time"]
+                    video_groups[video_id]["best_match_end_time"] = result["end_time"]
+            
+            # 添加所有匹配项
+            video_groups[video_id]["matches"].append({
+                "content": result["content"],
+                "content_type": result["content_type"],
+                "start_time": result["start_time"],
+                "end_time": result["end_time"],
+                "score": 1.0 / (1.0 + result["distance"])  # 转换为相似度分数
+            })
+        
+        # 查询视频元数据并构建最终结果
+        final_results = []
+        for video_id, group in video_groups.items():
+            video = db.query(Video).filter(Video.id == video_id).first()
+            if video:
+                final_results.append({
+                    "video_id": str(video.id),
+                    "filename": video.filename,
+                    "status": video.status.value,
+                    "summary": video.summary or "",
+                    "created_at": video.created_at.isoformat(),
+                    "best_match": {
+                        "content": group["best_match_content"],
+                        "start_time": group["best_match_start_time"],
+                        "end_time": group["best_match_end_time"],
+                        "score": 1.0 / (1.0 + group["best_match_score"])  # 转换为相似度分数
+                    },
+                    "matches": group["matches"]
+                })
+        
+        # 按最佳匹配分数排序
+        final_results.sort(key=lambda x: x["best_match"]["score"], reverse=True)
+        
+        logger.info(f"向量搜索处理完成，共 {len(final_results)} 个去重后的视频结果")
+        return {"results": final_results, "total": len(final_results)}
+    
+    except Exception as e:
+        logger.error(f"视频向量搜索失败: {str(e)}")
+        raise
+    finally:
+        db.close()
 
 
 # 初始化函数

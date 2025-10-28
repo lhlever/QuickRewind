@@ -26,6 +26,19 @@ class MilvusManager:
                 self.is_connected = True
                 logger.info(f"成功连接到Milvus服务器: {settings.milvus_host}:{settings.milvus_port}")
                 
+                # 检查集合是否存在，如果存在且schema已更改，则删除重建
+                if utility.has_collection(settings.milvus_collection_name):
+                    collection = Collection(settings.milvus_collection_name)
+                    # 获取当前schema
+                    current_schema = collection.schema
+                    # 查找content字段
+                    for field in current_schema.fields:
+                        if field.name == "content" and field.max_length != 2048:
+                            logger.warning("检测到content字段长度配置不匹配，正在重建集合...")
+                            utility.drop_collection(settings.milvus_collection_name)
+                            logger.info("集合已删除，将使用新的schema重新创建")
+                            break
+                
                 # 确保集合存在
                 self._ensure_collection_exists()
                 
@@ -37,12 +50,16 @@ class MilvusManager:
         """断开Milvus连接"""
         if self.is_connected:
             try:
-                connections.disconnect()
+                # pymilvus的disconnect方法需要一个alias参数，使用默认的'default'别名
+                connections.disconnect(alias="default")
                 self.is_connected = False
                 self.collection = None
                 logger.info("已断开Milvus连接")
             except Exception as e:
                 logger.error(f"断开Milvus连接失败: {str(e)}")
+                # 即使断开失败，也要重置状态以允许重新连接
+                self.is_connected = False
+                self.collection = None
     
     def _ensure_collection_exists(self):
         """确保集合存在，如果不存在则创建"""
@@ -54,7 +71,7 @@ class MilvusManager:
                 FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
                 FieldSchema(name="video_id", dtype=DataType.VARCHAR, max_length=64, description="视频ID"),
                 FieldSchema(name="content_type", dtype=DataType.VARCHAR, max_length=32, description="内容类型"),
-                FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=512, description="文本内容"),
+                FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=2048, description="文本内容"),
                 FieldSchema(name="start_time", dtype=DataType.FLOAT, description="开始时间（秒）"),
                 FieldSchema(name="end_time", dtype=DataType.FLOAT, description="结束时间（秒）"),
                 FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=settings.milvus_dim, description="向量表示")
@@ -103,22 +120,37 @@ class MilvusManager:
         if not self.is_connected:
             self.connect()
         
-        # 准备数据
-        entities = {
-            "video_id": [m["video_id"] for m in metadata],
-            "content_type": [m.get("content_type", "transcript") for m in metadata],
-            "content": [m["content"] for m in metadata],
-            "start_time": [m.get("start_time", 0.0) for m in metadata],
-            "end_time": [m.get("end_time", 0.0) for m in metadata],
-            "vector": vectors
-        }
+        # 准备数据 - 按照字段顺序准备数据
+        video_ids = [m["video_id"] for m in metadata]
+        content_types = [m.get("content_type", "transcript") for m in metadata]
         
-        # 插入数据
+        # 对content进行截断，确保不超过512字符的限制
+        contents = []
+        for m in metadata:
+            content = m["content"]
+            if len(content) > 512:
+                logger.warning(f"文本内容长度({len(content)})超过Milvus限制(512)，进行截断")
+                # 截断并添加省略号
+                content = content[:509] + "..."
+            contents.append(content)
+            
+        start_times = [m.get("start_time", 0.0) for m in metadata]
+        end_times = [m.get("end_time", 0.0) for m in metadata]
+        
+        # 插入数据 - 按照创建schema时的字段顺序（除了id字段）
         try:
-            result = self.collection.insert([entities[field] for field in self.collection.schema.field_names if field != "id"])
+            # 按照schema定义的顺序准备数据：video_id, content_type, content, start_time, end_time, vector
+            result = self.collection.insert([
+                video_ids,
+                content_types,
+                contents,
+                start_times,
+                end_times,
+                vectors
+            ])
             self.collection.flush()
             logger.info(f"成功插入 {len(vectors)} 个向量")
-            return result.primary_keys.tolist()
+            return list(result.primary_keys)
         except Exception as e:
             logger.error(f"插入向量失败: {str(e)}")
             raise

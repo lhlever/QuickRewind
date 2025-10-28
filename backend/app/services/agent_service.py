@@ -128,13 +128,13 @@ class VolcLLMWrapper:
         asyncio.set_event_loop(loop)
         try:
             result = loop.run_until_complete(
-                self.llm_service.generate(
+                self.llm_service.generate_async(
                     system_prompt=system_prompt,
                     prompt=prompt,
                     temperature=self.temperature
                 )
             )
-            print(result)
+            logger.info(f"[VolcLLMWrapper-sync] 大模型返回结果: 长度={len(result)}")
             return result
         finally:
             loop.close()
@@ -162,12 +162,14 @@ class VolcLLMWrapper:
         # 合并用户提示
         prompt = "\n".join(user_prompts)
         
-        # 调用LLM服务
-        result = await self.llm_service.generate(
+        # 调用LLM服务的异步方法
+        logger.info(f"[VolcLLMWrapper] 调用火山引擎大模型: prompt长度={len(prompt)}, 有系统提示={system_prompt is not None}")
+        result = await self.llm_service.generate_async(
             system_prompt=system_prompt,
             prompt=prompt,
             temperature=self.temperature
         )
+        logger.info(f"[VolcLLMWrapper] 大模型返回结果: 长度={len(result)}")
         return result
 
 
@@ -207,6 +209,9 @@ class Agent:
             # 转换MCP工具为LangChain工具
             langchain_tools = []
             
+            # 工具名称到工具对象的映射，用于后续直接调用
+            tool_map = {}
+            
             for tool in mcp_tools:
                 # 为每个工具单独创建包装函数
                 tool_name = getattr(tool, 'name', 'unknown_tool')
@@ -241,188 +246,317 @@ class Agent:
                 create_tool_function.__name__ = tool_name
                 create_tool_function.__doc__ = tool_desc
                 
-                # 添加到工具列表
+                # 添加到工具列表和映射
                 langchain_tools.append(create_tool_function)
+                tool_map[tool_name] = tool
             
-            # 创建系统提示
-            system_prompt = f"""
+            # 创建系统提示 - 标准Planning模式提示词
+            planning_prompt = f"""
             你是{self.config.name}，一个{self.config.role}。
             
-            你的任务是基于用户的请求，决定是：
-            1. 直接回答用户（如果信息足够）
-            2. 调用适当的工具获取更多信息后再回答
+            你需要按照以下Planning模式来处理用户的请求：
+            1. 分析问题并制定详细的执行计划
+            2. 按照计划逐步执行每个步骤
+            3. 根据执行结果调整计划（如有必要）
             
-            请根据以下决策路径分析用户请求：
-            - 如果用户请求明确需要使用工具（如搜索视频、分析内容等），请调用相应工具
-            - 如果用户请求是一般性问题且不需要额外信息，请直接回答
-            - 如果缺少必要参数，请向用户提问以获取信息
+            首先，你需要制定一个详细的执行计划，列出解决问题所需的步骤。然后按照计划逐步执行。
             
-            以下是你可用的工具：
+            可用工具列表：
             {get_available_tools_info()}
             
-            请按照严格的React思考过程进行决策，首先分析用户需求，然后决定是否调用工具。
-            """
+            请严格按照以下格式输出你的初始计划：
             
-            # 创建React风格的提示模板
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", system_prompt),
-                MessagesPlaceholder(variable_name="chat_history"),
-                ("user", "{input}"),
-                MessagesPlaceholder(variable_name="agent_scratchpad")
-            ])
+            Plan:
+            1. [第一步计划]
+            2. [第二步计划]
+            3. [更多步骤...] (根据需要添加)
+            
+            然后按照计划逐步执行，每一步都输出：
+            Step: [当前执行的步骤编号和描述]
+            Action: [调用工具的格式或直接回答]
+               - 工具调用格式: tool_name(参数1=值1, 参数2=值2)
+               - 直接回答格式: Finish[最终答案]
+            """
             
             # 初始化LLM包装器
             llm = VolcLLMWrapper(temperature=self.config.temperature)
             
-            # 如果有工具可用，创建真正的React Agent
-            if langchain_tools:
-                # 创建React Agent
-                agent = create_react_agent(
-                    llm=llm,
-                    tools=langchain_tools,
-                    prompt=prompt
-                )
-                
-                # 创建执行器
-                executor = AgentExecutor(
-                    agent=agent,
-                    tools=langchain_tools,
-                    max_iterations=self.config.max_steps,
-                    handle_parsing_errors=True,
-                    verbose=True
-                )
-                
-                return executor
-            else:
-                # 无工具可用，返回简单执行器
-                self.logger.warning("No tools available for React agent")
-                
-            # 即使没有工具可用，也要保持REACT模式的一致性
-            # 创建一个模拟REACT思考过程的执行器
-            self.logger.warning("没有工具可用，但仍保持REACT模式")
-            
-            # 获取工具信息
-            tools_info_str = get_available_tools_info()
-            
-            # 创建一个符合REACT模式的执行器
-            class ReactModeExecutor:
-                def __init__(self, config, tools_info):
-                    self.config = config
-                    self.tools_info = tools_info
-                    self.llm_service = VolcLLMService()  # 初始化LLM服务
-                
-                async def ainvoke(self, inputs):
-                    user_input = inputs.get("input", "")
+            # 创建真正的Planning执行器类
+            class PlanningExecutor:
+                def __init__(self, agent_config, tools, tool_mapping, llm_wrapper):
+                    self.config = agent_config
+                    self.tools = tools
+                    self.tool_map = tool_mapping
+                    self.llm = llm_wrapper
+                    self.logger = logging.getLogger(f"PlanningExecutor")
                     
-                    # 使用火山引擎大模型生成回答
+                async def ainvoke(self, inputs):
+                    # 获取输入参数
+                    user_input = inputs.get("input", "")
+                    chat_history = inputs.get("chat_history", [])
+                    
+                    # 初始化对话历史
+                    dialog_history = chat_history.copy()
+                    dialog_history.append({"role": "user", "content": user_input})
+                    
+                    # 构建初始规划提示
+                    initial_prompt = planning_prompt
+                    initial_prompt += "\n\n对话历史:\n"
+                    for msg in dialog_history:
+                        initial_prompt += f"{msg['role']}: {msg['content']}\n"
+                    
+                    # 第一步：生成执行计划
+                    self.logger.info(f"[Planning模式] 生成执行计划")
+                    plan_response = await self.llm.ainvoke([
+                        {"role": "system", "content": initial_prompt}
+                    ])
+                    
+                    self.logger.info(f"[Planning模式] 计划响应: {plan_response[:100]}...")
+                    
+                    # 解析计划
+                    plan_steps = self._parse_plan(plan_response)
+                    if not plan_steps:
+                        self.logger.error("[Planning模式] 无法解析生成的计划")
+                        return {"output": "无法生成有效的执行计划，请重试。"}
+                    
+                    # 保存计划信息
+                    execution_history = [f"生成的计划: {', '.join(plan_steps)}"]
+                    
+                    # 第二步：按照计划逐步执行
+                    for step_num, step_description in enumerate(plan_steps, 1):
+                        self.logger.info(f"[Planning模式] 执行步骤 {step_num}/{len(plan_steps)}: {step_description}")
+                        
+                        # 构建执行步骤的提示
+                        execution_prompt = planning_prompt
+                        execution_prompt += "\n\n对话历史:\n"
+                        for msg in dialog_history:
+                            execution_prompt += f"{msg['role']}: {msg['content']}\n"
+                        
+                        execution_prompt += "\n执行历史:\n"
+                        for entry in execution_history:
+                            execution_prompt += f"{entry}\n"
+                        
+                        # 添加当前步骤信息
+                        execution_prompt += f"\n当前需要执行的步骤:\n{step_num}. {step_description}"
+                        
+                        # 调用LLM生成当前步骤的行动
+                        self.logger.info(f"[Planning模式] 为步骤 {step_num} 生成行动")
+                        step_response = await self.llm.ainvoke([
+                            {"role": "system", "content": execution_prompt}
+                        ])
+                        
+                        # 解析步骤响应中的Action
+                        step_info, action = self._parse_step_response(step_response)
+                        
+                        if not action:
+                            self.logger.error(f"[Planning模式] 无法解析步骤 {step_num} 的响应格式")
+                            return {"output": f"无法解析步骤 {step_num} 的响应格式，请重试。"}
+                        
+                        # 更新执行历史
+                        execution_history.append(f"Step: {step_info}")
+                        execution_history.append(f"Action: {action}")
+                        
+                        # 检查是否为直接回答
+                        if action.startswith("Finish[") and action.endswith("]"):
+                            # 提取最终答案
+                            final_answer = action[7:-1].strip()
+                            self.logger.info(f"[Planning模式] 达到最终答案: {final_answer}")
+                            return {"output": final_answer}
+                        
+                        # 尝试调用工具
+                        tool_result = await self._execute_tool(action)
+                        self.logger.info(f"[Planning模式] 工具执行结果: {tool_result[:100]}...")
+                        
+                        # 将工具结果添加到执行历史
+                        execution_history.append(f"Result: {tool_result}")
+                        
+                        # 检查是否达到最大步骤限制
+                        if step_num >= self.config.max_steps:
+                            break
+                    
+                    # 如果执行完所有计划步骤或达到最大步数，生成总结
+                    self.logger.info("[Planning模式] 执行完所有计划步骤，生成最终总结")
+                    
+                    # 构建总结提示
+                    summary_prompt = planning_prompt
+                    summary_prompt += "\n\n对话历史:\n"
+                    for msg in dialog_history:
+                        summary_prompt += f"{msg['role']}: {msg['content']}\n"
+                    
+                    summary_prompt += "\n执行历史:\n"
+                    for entry in execution_history:
+                        summary_prompt += f"{entry}\n"
+                    
+                    summary_prompt += "\n请根据以上执行历史，总结最终结果，使用Finish[最终答案]格式输出。"
+                    
+                    # 生成最终总结
+                    summary_response = await self.llm.ainvoke([
+                        {"role": "system", "content": summary_prompt}
+                    ])
+                    
+                    # 尝试提取总结中的最终答案
+                    if "Finish[" in summary_response and "]" in summary_response:
+                        finish_start = summary_response.index("Finish[") + 7
+                        finish_end = summary_response.rfind("]")
+                        if finish_start < finish_end:
+                            final_answer = summary_response[finish_start:finish_end].strip()
+                            return {"output": final_answer}
+                    
+                    # 如果无法提取，直接返回总结
+                    return {"output": summary_response}
+                    
+                def _parse_plan(self, response):
+                    """解析LLM生成的计划，提取步骤列表"""
                     try:
-                        # 准备REACT模式的系统提示
-                        system_prompt = f"""
-                        你是{self.config.name}，一个{self.config.role}。
-                        
-                        请按照REACT思考过程回答用户问题：
-                        1. 首先分析问题（思考）
-                        2. 决定是否需要调用工具（推理）
-                        3. 由于当前没有可用工具，直接基于你的知识回答（回答）
-                        
-                        请以[思考]、[推理]、[回答]的格式输出。
-                        """
-                        
-                        # 调用火山引擎大模型
-                        self.logger.info(f"[REACT模式] 调用火山引擎大模型回答问题: {user_input[:50]}...")
-                        response = await self.llm_service.generate_async(
-                            prompt=user_input,
-                            system_prompt=system_prompt,
-                            temperature=0.7,
-                            max_tokens=2048
-                        )
-                        
-                        self.logger.info(f"[REACT模式] 火山引擎大模型返回结果: {response[:50]}...")
-                        
-                        # 如果响应中包含[思考]、[推理]、[回答]格式，直接返回
-                        if "[思考]" in response and "[推理]" in response and "[回答]" in response:
-                            return {"output": response}
-                        else:
-                            # 确保返回符合REACT模式的格式
-                            react_format_answer = f"""[思考] 分析用户问题：{user_input}
-[推理] 我需要评估是否需要调用工具来回答这个问题。由于当前系统没有可用的工具，我将基于我的知识直接回答。
-[回答] {response}
-
-注意：这是基于大模型自身知识的回答。"""
-                            return {"output": react_format_answer}
+                        plan_steps = []
+                        if "Plan:" in response:
+                            plan_section = response[response.index("Plan:"):]
                             
+                            # 提取每个步骤
+                            for line in plan_section.split("\n"):
+                                line = line.strip()
+                                if line.startswith("1.") or line.startswith("2.") or line.startswith("3.") or \
+                                   line.startswith("4.") or line.startswith("5."):
+                                    # 提取步骤编号和描述
+                                    if "." in line:
+                                        step_desc = line.split(".", 1)[1].strip()
+                                        if step_desc:
+                                            plan_steps.append(step_desc)
+                        return plan_steps
                     except Exception as e:
-                        # 错误处理：即使LLM调用失败也返回有意义的回答
-                        error_msg = str(e)
-                        self.logger.error(f"[REACT模式] 调用火山引擎大模型失败: {error_msg}")
+                        self.logger.error(f"[Planning模式] 解析计划失败: {str(e)}")
+                        return []
+                    
+                def _parse_step_response(self, response):
+                    """解析LLM步骤响应，提取步骤信息和Action"""
+                    try:
+                        step_info = None
+                        action = None
                         
-                        # 备用回答，确保保持REACT模式
-                        fallback_answer = f"""[思考] 分析用户问题：{user_input}
-[推理] 尝试调用大模型时遇到错误，需要提供备用回答。
-[回答] 抱歉，在处理您的问题时遇到了一些技术困难。我无法使用大模型来回答这个问题。
-
-当前系统支持的功能：
-{self.tools_info}
-
-请稍后再试，或者尝试一个不同的问题。"""
-                        return {"output": fallback_answer}
+                        # 提取Step部分
+                        if "Step:" in response:
+                            step_start = response.index("Step:") + 5
+                            step_end = response.find("Action:", step_start)
+                            if step_end != -1:
+                                step_info = response[step_start:step_end].strip()
+                            else:
+                                step_info = response[step_start:].strip()
+                        
+                        # 提取Action部分
+                        if "Action:" in response:
+                            action_start = response.index("Action:") + 7
+                            action = response[action_start:].strip()
+                        
+                        return step_info, action
+                    except Exception as e:
+                        self.logger.error(f"[Planning模式] 解析步骤响应失败: {str(e)}")
+                        return None, None
+                    
+                async def _execute_tool(self, action_str):
+                    """执行工具调用"""
+                    try:
+                        # 简单的工具调用格式解析
+                        # 格式: tool_name(param1=value1, param2=value2)
+                        if "(" in action_str and ")" in action_str:
+                            # 提取工具名称
+                            tool_name_end = action_str.find("(")
+                            if tool_name_end == -1:
+                                return "工具调用格式错误"
+                            
+                            tool_name = action_str[:tool_name_end].strip()
+                            
+                            # 检查工具是否存在
+                            if tool_name not in self.tool_map:
+                                return f"未知工具: {tool_name}"
+                            
+                            # 提取参数部分
+                            params_str = action_str[tool_name_end+1:-1].strip()
+                            
+                            # 解析参数
+                            params = {}
+                            if params_str:
+                                # 简单的参数解析
+                                for param_pair in params_str.split(","):
+                                    if "=" in param_pair:
+                                        key, value = param_pair.split("=", 1)
+                                        key = key.strip()
+                                        # 移除可能的引号
+                                        value = value.strip().strip("'\" ")
+                                        params[key] = value
+                            
+                            # 创建工具调用
+                            tool_call = ToolCall(
+                                name=tool_name,
+                                parameters=params
+                            )
+                            
+                            # 调用工具
+                            self.logger.info(f"[React模式] 调用工具: {tool_name}, 参数: {params}")
+                            result = await mcp_server.call_tool(tool_call)
+                            return result.result
+                        else:
+                            return "工具调用格式错误"
+                    except Exception as e:
+                        self.logger.error(f"[React模式] 执行工具失败: {str(e)}")
+                        return f"工具执行失败: {str(e)}"
             
-            return ReactModeExecutor(self.config, tools_info_str)
+            # 创建并返回Planning执行器
+            return PlanningExecutor(self.config, langchain_tools, tool_map, llm)
             
         except Exception as e:
-            self.logger.error(f"[REACT模式] 创建REACT agent执行器失败: {str(e)}")
+            self.logger.error(f"[Planning模式] 创建Planning执行器失败: {str(e)}")
             
-            # 即使在异常情况下，也要保持REACT模式并尝试调用大模型
-            tools_info_str = get_available_tools_info()
-            
-            class FallbackReactExecutor:
-                def __init__(self, config, tools_info):
+            # 创建一个简化的Fallback Planning执行器
+            class FallbackPlanningExecutor:
+                def __init__(self, config):
                     self.config = config
-                    self.tools_info = tools_info
-                    self.llm_service = VolcLLMService()  # 初始化LLM服务
+                    self.llm_service = VolcLLMService()
+                    self.logger = logging.getLogger(f"FallbackPlanningExecutor")
                 
                 async def ainvoke(self, inputs):
                     user_input = inputs.get("input", "")
                     
-                    # 尝试调用火山引擎大模型生成回答
+                    # 准备简化的Planning模式系统提示
+                    system_prompt = f"""
+                    你是{self.config.name}，一个{self.config.role}。
+                    
+                    请按照Planning模式思考并回答问题：
+                    1. 首先制定简单的计划
+                    2. 然后直接给出最终答案
+                    
+                    请严格按照以下格式输出：
+                    Plan: [简单的执行计划]
+                    Action: Finish[最终答案]
+                    """
+                    
                     try:
-                        # 准备REACT模式的系统提示
-                        system_prompt = f"""
-                        你是{self.config.name}，一个{self.config.role}。
-                        
-                        请按照REACT思考过程回答用户问题：
-                        1. 首先分析问题（思考）
-                        2. 决定是否需要调用工具（推理）
-                        3. 由于系统初始化异常，直接基于你的知识回答（回答）
-                        
-                        请以[思考]、[推理]、[回答]的格式输出。
-                        """
-                        
-                        # 调用火山引擎大模型
-                        self.logger.info(f"[REACT模式-异常恢复] 调用火山引擎大模型回答问题: {user_input[:50]}...")
+                        # 调用LLM生成回答
+                        self.logger.info(f"[Planning模式-异常恢复] 调用大模型回答问题")
                         response = await self.llm_service.generate_async(
                             prompt=user_input,
                             system_prompt=system_prompt,
-                            temperature=0.7,
-                            max_tokens=2048
+                            temperature=0.7
                         )
                         
-                        self.logger.info(f"[REACT模式-异常恢复] 火山引擎大模型返回结果: {response[:50]}...")
+                        # 解析响应，提取最终答案
+                        if "Action: Finish[" in response and "]" in response:
+                            finish_start = response.index("Action: Finish[") + 15
+                            finish_end = response.rfind("]")
+                            if finish_start < finish_end:
+                                final_answer = response[finish_start:finish_end].strip()
+                                return {"output": final_answer}
                         
+                        # 如果解析失败，返回完整响应
                         return {"output": response}
-                        
                     except Exception as e:
-                        # 如果大模型调用也失败，提供最后的备用回答
-                        self.logger.error(f"[REACT模式-异常恢复] 调用火山引擎大模型失败: {str(e)}")
-                        
-                        # 返回符合REACT模式的fallback回答
-                        return {"output": f"[思考] 分析用户问题：{user_input}\n[推理] 系统在初始化REACT agent过程中遇到错误，并且尝试调用大模型也失败了\n[回答] 非常抱歉，系统在处理您的请求时遇到了严重的技术问题。我无法为您提供关于'{user_input}'的具体回答。请稍后再试，或者尝试重启系统。"}
+                        self.logger.error(f"[Planning模式-异常恢复] 调用大模型失败: {str(e)}")
+                        return {"output": "系统在处理您的请求时遇到技术问题，请稍后重试。"}
             
-            return FallbackReactExecutor(self.config, tools_info_str)
+            return FallbackPlanningExecutor(self.config)
     
     async def process_request(self, request: str, chat_history: Optional[List[Dict]] = None, db=None) -> str:
         """
-        处理用户请求 - React模式实现
+        处理用户请求 - Planning模式实现
         
         Args:
             request: 用户请求文本
@@ -433,9 +567,9 @@ class Agent:
             处理结果
         """
         try:
-            self.logger.info(f"[REACT模式] 开始处理请求: {request}")
+            self.logger.info(f"[Planning模式] 开始处理请求: {request}")
             
-            # 对于日期和时间类问题，我们可以直接获取系统时间
+            # 对于日期和时间类问题，我们可以直接获取系统时间（快速路径）
             request_lower = request.lower()
             if '今天几号' in request_lower or '日期' in request_lower:
                 import datetime
@@ -450,11 +584,11 @@ class Agent:
                 self.logger.info(f"[系统回答] 时间问题: {direct_answer}")
                 return direct_answer
             
-            # 所有其他问题都使用REACT模式的Agent执行器处理
+            # 所有其他问题都使用Planning模式的Agent执行器处理
             try:
-                self.logger.info(f"[REACT模式] 使用大模型和REACT流程处理问题")
+                self.logger.info(f"[Planning模式] 使用大模型和Planning流程处理问题")
                 
-                # 准备执行器输入 - 符合REACT模式的要求
+                # 准备执行器输入 - 符合Planning模式的要求
                 inputs = {
                     "input": request
                 }
@@ -463,101 +597,36 @@ class Agent:
                 if chat_history:
                     inputs["chat_history"] = chat_history
                 
-                self.logger.info(f"[REACT模式] 调用Agent执行器 (React模式), 输入: {inputs}")
+                self.logger.info(f"[Planning模式] 调用Agent执行器 (Planning模式), 输入: {inputs}")
                 
-                # 直接调用Agent执行器 - 这是REACT模式的核心
+                # 直接调用Agent执行器 - 这是Planning模式的核心循环
                 response = await self.agent_executor.ainvoke(inputs)
                 
-                self.logger.info(f"[REACT模式] Agent执行器返回结果: {response}")
+                self.logger.info(f"[Planning模式] Agent执行器返回结果: {response}")
                 
-                # 从REACT模式的执行结果中提取输出
+                # 从Planning模式的执行结果中提取输出
                 direct_answer = response.get("output", "")
                 
-                self.logger.info(f"[REACT模式] 从REACT结果中提取的回答: '{direct_answer}'")
+                self.logger.info(f"[Planning模式] 从Planning结果中提取的回答: '{direct_answer}'")
                 
                 # 确保有有效回答
                 if not direct_answer or direct_answer.strip() == "" or direct_answer == "无法生成响应":
-                    self.logger.warning(f"[REACT模式] 回答无效，使用备用回复")
+                    self.logger.warning(f"[Planning模式] 回答无效，使用备用回复")
                     direct_answer = f"根据您的问题: {request}，我无法提供具体回答。请尝试提供更多细节或换一种方式提问。"
                 
-                # 直接返回REACT模式生成的回答
+                # 直接返回Planning模式生成的最终答案
                 return direct_answer
                 
             except Exception as e:
                 error_msg = str(e)
-                self.logger.error(f"[REACT模式] 调用失败: {error_msg}", exc_info=True)
+                self.logger.error(f"[Planning模式] 调用失败: {error_msg}", exc_info=True)
                 # 即使失败也返回有意义的错误信息
-                return f"处理您的问题时遇到错误: {error_msg}。系统使用的是REACT模式的Agent，但调用过程中出现了问题。"
-            
-            # 从MCP服务器获取所有可用工具进行分析和调用（如果不是简单问题）
-            if not direct_answer:
-                try:
-                    mcp_tools = mcp_server.get_available_tools()
-                    for tool in mcp_tools:
-                        tool_name = getattr(tool, 'name', 'unknown_tool')
-                        tool_desc = getattr(tool, 'description', '')
-                        
-                        # 简单匹配逻辑：检查工具名称和描述是否与用户请求相关
-                        request_lower = request.lower()
-                        tool_name_lower = tool_name.lower()
-                        tool_desc_lower = tool_desc.lower()
-                        
-                        # 如果工具名称或描述中包含用户请求的关键词，可能需要调用
-                        if (any(keyword in request_lower for keyword in [tool_name_lower, '搜索', '查询', '分析', '总结']) or
-                            any(keyword in request_lower for keyword in tool_desc_lower.split())):
-                            prepared_tools.append(tool_name)
-                            
-                            # 实际调用匹配的工具
-                            try:
-                                # 创建工具调用参数
-                                tool_call = ToolCall(
-                                    name=tool_name,
-                                    parameters={'query': request}  # 传递用户查询作为参数
-                                )
-                                
-                                # 调用工具并获取结果
-                                result = await mcp_server.call_tool(tool_call)
-                                tool_call_results[tool_name] = result.result
-                                self.logger.info(f"Successfully called tool {tool_name}")
-                            except Exception as e:
-                                error_msg = f"调用工具 {tool_name} 失败: {str(e)}"
-                                tool_call_results[tool_name] = error_msg
-                                self.logger.error(error_msg)
-                except Exception as e:
-                    self.logger.error(f"Error getting MCP tools: {str(e)}")
-            
-            # 准备响应内容
-            response_content = ""
-            
-            # 如果有直接回答，优先显示直接回答
-            if direct_answer:
-                response_content = f"💡 直接回答：\n{direct_answer}"
-            # 如果有工具调用结果，显示工具调用结果
-            elif tool_call_results:
-                response_content = "📊 工具调用结果："
-                for tool_name, result in tool_call_results.items():
-                    response_content += f"\n\n**{tool_name}**:\n{result}"
-            # 如果没有匹配的工具，显示通用信息
-            else:
-                response_content = "您的问题不需要特定工具回答，这是一个可以直接回答的问题。"
-            
-            # 添加工具信息
-            response_content += f"\n\n🔧 所有支持的工具：\n{available_tools}"
-            response_content += f"\n\n📋 根据您的请求，准备调用的工具：\n{', '.join(prepared_tools) if prepared_tools else '暂无匹配的工具'}"
-            
-            # 记录处理结果
-            self.logger.info(f"Request processing completed successfully. Response content prepared.")
-            
-            return response_content
+                return f"处理您的问题时遇到错误: {error_msg}。系统使用的是Planning模式的Agent，但调用过程中出现了问题。"
             
         except Exception as e:
             self.logger.error(f"Error processing request: {str(e)}")
-            # 返回错误信息，同时包含支持的工具信息
-            try:
-                available_tools = get_available_tools_info()
-                return f"处理您的请求时遇到了问题：{str(e)}。\n\n🔧 所有支持的工具：\n{available_tools}"
-            except:
-                return f"处理您的请求时遇到了问题：{str(e)}"
+            # 返回简洁的错误信息
+            return f"处理您的请求时遇到了问题：{str(e)}。请稍后重试。"
 
     
     def reset(self):
@@ -655,7 +724,6 @@ agent_service = AgentService()
 __all__ = [
     'Agent',
     'AgentConfig',
-    'AgentState',
     'AgentService',
     'agent_service'
 ]

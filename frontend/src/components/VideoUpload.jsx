@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import './VideoUpload.css';
 import { apiService } from '../services/api';
 
@@ -8,7 +8,12 @@ const VideoUpload = ({ onVideoAnalyzed }) => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
+  const [videoId, setVideoId] = useState(null);
+  const [processingSteps, setProcessingSteps] = useState([]);
+  const [overallProgress, setOverallProgress] = useState(0);
+  const [processingStatus, setProcessingStatus] = useState('');
   const fileInputRef = useRef(null);
+  const statusPollInterval = useRef(null);
 
   // 处理文件选择
   const handleFileSelect = (e) => {
@@ -37,10 +42,21 @@ const VideoUpload = ({ onVideoAnalyzed }) => {
   const handleFile = (file) => {
     if (!file) return;
 
-    // 检查文件类型
-    const validTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/mov'];
+    // 检查文件类型 - 支持更多常见视频格式
+    const validTypes = [
+      'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', // MOV格式的正确MIME类型
+      'video/x-msvideo', // AVI
+      'video/x-matroska', // MKV
+      'video/x-flv', // FLV
+      'video/x-ms-wmv', // WMV
+      'video/mpeg', // MPEG, MPG
+      'video/3gpp', // 3GP
+      'video/3gpp2' // 3G2
+    ];
     if (!validTypes.includes(file.type)) {
-      setError('请上传有效的视频文件（MP4, WebM, OGG, MOV）');
+      // 获取文件扩展名用于更好的错误提示
+      const fileExt = file.name.split('.').pop().toLowerCase();
+      setError(`文件类型不支持。请上传有效的视频文件。当前文件扩展名: ${fileExt}`);
       return;
     }
 
@@ -63,38 +79,24 @@ const VideoUpload = ({ onVideoAnalyzed }) => {
 
     // 创建FormData用于文件上传
     const formData = new FormData();
-    formData.append('video', file);
-    formData.append('title', file.name);
+    formData.append('file', file);
+    // 移除title字段，因为后端API没有要求这个参数
 
     // 调用API上传视频
     apiService.video.upload(formData, (progress) => {
       setUploadProgress(progress);
     })
     .then(response => {
-      // 上传成功后获取视频详情和大纲
-      return Promise.all([
-        apiService.video.getDetails(response.video_id),
-        apiService.video.getOutline(response.video_id)
-      ]);
-    })
-    .then(([videoDetails, videoOutline]) => {
-      // 处理API返回的数据
-      if (onVideoAnalyzed) {
-        onVideoAnalyzed({
-          id: videoDetails.id,
-          title: videoDetails.title || file.name,
-          duration: videoDetails.duration,
-          outline: videoOutline,
-          thumbnail: videoDetails.thumbnail_url || URL.createObjectURL(file),
-          file: file // 保留原文件引用以便本地播放
-        });
-      }
+      // 保存videoId并开始轮询处理状态
+      setVideoId(response.video_id);
+      startStatusPolling(response.video_id);
       
-      setIsProcessing(false);
+      // 上传完成后获取视频详情和大纲 - 改为轮询完成后获取
     })
     .catch(err => {
-      console.error('视频上传和分析失败:', err);
-      setError('视频上传或分析失败，请稍后重试');
+      console.error('视频上传失败:', err);
+      // 显示从API返回的详细错误信息，如果没有则使用通用消息
+      setError(err.message || '视频上传失败，请稍后重试');
       setIsProcessing(false);
       
       // 失败时使用模拟数据作为备选
@@ -112,6 +114,84 @@ const VideoUpload = ({ onVideoAnalyzed }) => {
       }, 1000);
     });
   };
+  
+  // 开始轮询处理状态
+  const startStatusPolling = (id) => {
+    // 清除现有的轮询
+    if (statusPollInterval.current) {
+      clearInterval(statusPollInterval.current);
+    }
+    
+    // 设置新的轮询
+    statusPollInterval.current = setInterval(() => {
+      pollProcessingStatus(id);
+    }, 2000); // 每2秒轮询一次
+    
+    // 立即执行一次
+    pollProcessingStatus(id);
+  };
+  
+  // 轮询处理状态
+  const pollProcessingStatus = async (id) => {
+    try {
+      const statusResponse = await apiService.video.getStatus(id);
+      
+      // 更新状态和进度
+      setProcessingStatus(statusResponse.status);
+      setOverallProgress(statusResponse.progress_percentage);
+      setProcessingSteps(statusResponse.processing_steps || []);
+      
+      // 如果处理完成或失败，停止轮询并获取结果
+      if (statusResponse.status === 'completed') {
+        stopStatusPolling();
+        // 获取视频详情和大纲
+        try {
+          const [videoDetails, videoOutline] = await Promise.all([
+            apiService.video.getDetails(id),
+            apiService.video.getOutline(id)
+          ]);
+          
+          if (onVideoAnalyzed) {
+            onVideoAnalyzed({
+              id: videoDetails.id,
+              title: videoDetails.title || selectedFile?.name,
+              duration: videoDetails.duration,
+              outline: videoOutline,
+              thumbnail: videoDetails.thumbnail_url || (selectedFile ? URL.createObjectURL(selectedFile) : null),
+              file: selectedFile // 保留原文件引用以便本地播放
+            });
+          }
+          
+          setIsProcessing(false);
+        } catch (err) {
+          console.error('获取视频详情失败:', err);
+          setError('处理成功但获取结果失败，请刷新页面重试');
+          setIsProcessing(false);
+        }
+      } else if (statusResponse.status === 'failed') {
+        stopStatusPolling();
+        setError('视频处理失败，请稍后重试');
+        setIsProcessing(false);
+      }
+    } catch (err) {
+      console.error('轮询处理状态失败:', err);
+    }
+  };
+  
+  // 停止轮询
+  const stopStatusPolling = () => {
+    if (statusPollInterval.current) {
+      clearInterval(statusPollInterval.current);
+      statusPollInterval.current = null;
+    }
+  };
+  
+  // 清理轮询
+  useEffect(() => {
+    return () => {
+      stopStatusPolling();
+    };
+  }, []);
 
   // 生成模拟的视频大纲数据
   const generateMockOutline = () => {
@@ -200,13 +280,29 @@ const VideoUpload = ({ onVideoAnalyzed }) => {
     return sections;
   };
 
-  // 重新上传
   const handleRetry = () => {
     setSelectedFile(null);
     setError(null);
     setUploadProgress(0);
+    setVideoId(null);
+    setProcessingSteps([]);
+    setOverallProgress(0);
+    setProcessingStatus('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+  
+  // 格式化持续时间，将秒数转换为更易读的格式
+  const formatDuration = (seconds) => {
+    if (seconds < 1) {
+      return `${Math.round(seconds * 1000)}ms`;
+    } else if (seconds < 60) {
+      return `${seconds.toFixed(1)}s`;
+    } else {
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = seconds % 60;
+      return `${minutes}m ${remainingSeconds.toFixed(0)}s`;
     }
   };
 
@@ -246,13 +342,49 @@ const VideoUpload = ({ onVideoAnalyzed }) => {
           <div className="progress-bar">
             <div 
               className="progress-fill" 
-              style={{ width: `${uploadProgress}%` }}
+              style={{ width: `${uploadProgress < 100 ? uploadProgress : overallProgress}%` }}
             ></div>
           </div>
           <p className="progress-text">
-            {uploadProgress < 100 ? '正在上传...' : '正在分析视频...'}
+            {uploadProgress < 100 ? '正在上传...' : `正在处理: ${processingStatus === 'transcribing' ? '语音识别' : processingStatus === 'analyzing' ? '内容分析' : '处理中'}`}
           </p>
-          <p className="progress-percentage">{uploadProgress}%</p>
+          <p className="progress-percentage">{uploadProgress < 100 ? uploadProgress : overallProgress}%</p>
+          
+          {/* 显示处理步骤详情 */}
+          {uploadProgress >= 100 && processingSteps.length > 0 && (
+            <div className="processing-steps">
+              <h4>处理进度</h4>
+              <div className="steps-list">
+                {processingSteps.map((step, index) => (
+                  <div 
+                    key={index} 
+                    className={`step-item ${step.status}`}
+                  >
+                    <div className="step-icon">
+                      {step.status === 'completed' && <span className="icon-complete">✓</span>}
+                      {step.status === 'in_progress' && <span className="icon-processing">⏳</span>}
+                      {step.status === 'failed' && <span className="icon-failed">✗</span>}
+                    </div>
+                    <div className="step-info">
+                      <div className="step-header">
+                        <span className="step-name">{step.name}</span>
+                        {step.duration !== null && (
+                          <span className="step-duration">耗时: {formatDuration(step.duration)}</span>
+                        )}
+                      </div>
+                      <div className="step-footer">
+                        {step.status === 'in_progress' && <span className="step-status processing">处理中...</span>}
+                        {step.status === 'completed' && <span className="step-status completed">已完成</span>}
+                        {step.status === 'failed' && (
+                          <span className="step-status failed">失败 {step.error && `: ${step.error}`}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

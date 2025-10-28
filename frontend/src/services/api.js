@@ -17,7 +17,17 @@ const request = async (endpoint, options = {}) => {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      // 尝试获取响应中的错误信息
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      try {
+        const errorResponse = await response.json();
+        if (errorResponse.detail) {
+          errorMessage = errorResponse.detail;
+        }
+      } catch (e) {
+        // 如果响应不是JSON格式，使用默认错误信息
+      }
+      throw new Error(errorMessage);
     }
 
     return await response.json();
@@ -53,7 +63,17 @@ export const apiService = {
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve(JSON.parse(xhr.responseText));
           } else {
-            reject(new Error(`Upload failed with status ${xhr.status}`));
+            // 尝试获取响应中的错误信息
+            let errorMessage = `Upload failed with status ${xhr.status}`;
+            try {
+              const errorResponse = JSON.parse(xhr.responseText);
+              if (errorResponse.detail) {
+                errorMessage = errorResponse.detail;
+              }
+            } catch (e) {
+              // 如果响应不是JSON格式，使用默认错误信息
+            }
+            reject(new Error(errorMessage));
           }
         });
         
@@ -71,6 +91,9 @@ export const apiService = {
     
     // 获取视频大纲
     getOutline: (videoId) => request(`/v1/videos/${videoId}/outline`),
+    
+    // 获取视频处理状态
+    getStatus: (videoId) => request(`/v1/videos/${videoId}/status`),
   },
   
   // Agent相关API

@@ -39,6 +39,8 @@ class Video(Base):
     # 元数据
     video_metadata = Column(JSON, nullable=True)
     
+    # 注意：处理步骤信息现在在内存中跟踪，不存储到数据库
+    
     # 时间戳
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

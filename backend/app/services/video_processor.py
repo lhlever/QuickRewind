@@ -48,6 +48,13 @@ class VideoProcessor:
             包含文件信息的字典
         """
         try:
+            # 验证文件扩展名
+            valid_extensions = ['.mp4', '.avi', '.mov', '.webm', '.mkv', '.flv', '.wmv', '.mpeg', '.mpg', '.ogg']
+            file_ext = os.path.splitext(filename)[1].lower()
+            
+            if file_ext not in valid_extensions:
+                raise ValueError(f"请上传有效的视频文件，支持的格式: {', '.join(valid_extensions)}")
+            
             # 生成唯一文件名
             unique_filename = f"{uuid.uuid4()}_{filename}"
             file_path = os.path.join(self.video_dir, unique_filename)
@@ -63,6 +70,19 @@ class VideoProcessor:
             if file_size > settings.max_video_size:
                 os.remove(file_path)
                 raise ValueError(f"视频文件过大，最大支持 {settings.max_video_size / (1024*1024*1024):.1f}GB")
+            
+            # 尝试验证文件是否为有效的视频文件
+            try:
+                # 使用ffmpeg验证文件格式
+                probe = ffmpeg.probe(file_path)
+                # 检查是否包含视频流
+                has_video_stream = any(stream["codec_type"] == "video" for stream in probe["streams"])
+                if not has_video_stream:
+                    os.remove(file_path)
+                    raise ValueError("请上传有效的视频文件，文件不包含视频流")
+            except ffmpeg.Error as e:
+                os.remove(file_path)
+                raise ValueError(f"请上传有效的视频文件: {e.stderr.decode()}")
             
             logger.info(f"视频文件已保存: {file_path}, 大小: {file_size / (1024*1024):.2f}MB")
             

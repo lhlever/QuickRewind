@@ -10,8 +10,24 @@ const VideoUploader = ({ onUploadComplete }) => {
   // 处理文件选择
   const handleFileSelect = (event) => {
     const file = event.target.files[0]
-    if (file && file.type.startsWith('video/')) {
+    // 支持的视频MIME类型
+    const validTypes = [
+      'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', // MOV
+      'video/x-msvideo', // AVI
+      'video/x-matroska', // MKV
+      'video/x-flv', // FLV
+      'video/x-ms-wmv', // WMV
+      'video/mpeg', // MPEG, MPG
+      'video/3gpp', // 3GP
+      'video/3gpp2' // 3G2
+    ];
+    
+    if (file && validTypes.includes(file.type)) {
       handleFile(file)
+    } else if (file) {
+      // 显示更具体的错误信息
+      const fileExt = file.name.split('.').pop().toLowerCase();
+      alert(`文件类型不支持。请上传有效的视频文件。当前文件扩展名: ${fileExt}`);
     }
   }
 

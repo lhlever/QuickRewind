@@ -1,0 +1,108 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules
+venv/
+.env
+.env.local
+.env.production
+
+# Build outputs
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Video and audio files
+*.mov
+*.mp4
+*.avi
+*.wmv
+*.flv
+*.wav
+*.mp3
+*.aac
+*.ogg
+*.m4a
+
+# Data directories
+data/
+logs/
+
+# OS generated files
+Thumbs.db
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Icon?
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+
+# IDE files
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.iml
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+backend/venv/bin/pip3.9
+backend/venv/bin/pip3
+backend/venv/bin/pip
+backend/venv/bin/pip
+backend/venv/bin/pip3
+backend/venv/bin/pip3.9
