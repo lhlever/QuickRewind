@@ -76,8 +76,13 @@ async def shutdown_event():
     """应用关闭事件"""
     logger.info("Shutting down QuickRewind API...")
     
-    # 关闭数据库连接
-    await engine.dispose()
+    # 关闭数据库连接（添加安全检查）
+    if engine is not None:
+        try:
+            await engine.dispose()
+            logger.info("Database connection disposed")
+        except Exception as e:
+            logger.error(f"Error disposing database connection: {str(e)}")
 
 
 @app.get("/")

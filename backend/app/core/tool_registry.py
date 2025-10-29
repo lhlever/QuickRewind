@@ -462,7 +462,7 @@ def register_prompt_templates():
 # 视频向量搜索工具
 @tool(
     name="search_video_by_vector",
-    description="使用向量相似度搜索视频内容",
+    description="连接向量数据库，使用向量相似度搜索视频内容",
     parameters=[
         ToolParameter(
             name="query",
@@ -506,8 +506,10 @@ async def search_video_by_vector_tool(query: str, top_k: int = 10) -> Dict[str, 
         logger.info(f"开始向量搜索，查询: {query}, top_k: {top_k}")
         
         # 为查询生成向量
+        logger.info(f"正在为查询 '{query}' 生成向量表示")
         query_embedding = llm_service.generate_embedding(query)
         logger.info(f"查询向量生成完成，维度: {len(query_embedding)}")
+        logger.info(f"查询向量前5个值: {query_embedding[:5]}")
         
         # 使用Milvus进行向量搜索
         with milvus_context() as mc:
@@ -555,12 +557,26 @@ async def search_video_by_vector_tool(query: str, top_k: int = 10) -> Dict[str, 
         for video_id, group in video_groups.items():
             video = db.query(Video).filter(Video.id == video_id).first()
             if video:
+                # 计算相关度百分比
+                relevance = round((1.0 / (1.0 + group["best_match_score"])) * 100, 1)
+                
+                # 构建前端需要的结果格式
                 final_results.append({
-                    "video_id": str(video.id),
+                    "id": str(video.id),  # 前端需要id字段而不是video_id
+                    "title": video.filename,  # 前端需要title字段而不是filename
+                    "video_id": str(video.id),  # 保留video_id以保持兼容性
                     "filename": video.filename,
                     "status": video.status.value,
                     "summary": video.summary or "",
                     "created_at": video.created_at.isoformat(),
+                    # 前端需要的字段
+                    "thumbnail": f"/api/v1/videos/{video.id}/thumbnail",  # 生成缩略图URL
+                    "duration": "00:00:00",  # 默认时长，实际应用中应从视频元数据获取
+                    "timestamp": f"{int(group['best_match_start_time'] // 60)}:{int(group['best_match_start_time'] % 60):02d}",  # 转换为MM:SS格式
+                    "relevance": relevance,  # 相关度百分比
+                    "snippet": group["best_match_content"][:150] + "..." if len(group["best_match_content"]) > 150 else group["best_match_content"],  # 摘要片段
+                    "keywords": [],  # 预留关键词字段
+                    # 保留原有best_match和matches数据
                     "best_match": {
                         "content": group["best_match_content"],
                         "start_time": group["best_match_start_time"],
@@ -574,6 +590,9 @@ async def search_video_by_vector_tool(query: str, top_k: int = 10) -> Dict[str, 
         final_results.sort(key=lambda x: x["best_match"]["score"], reverse=True)
         
         logger.info(f"向量搜索处理完成，共 {len(final_results)} 个去重后的视频结果")
+        # 打印完整的结果详情用于调试
+        import json
+        logger.info(f"完整搜索结果详情: {json.dumps(final_results, ensure_ascii=False, indent=2)}")
         return {"results": final_results, "total": len(final_results)}
     
     except Exception as e:

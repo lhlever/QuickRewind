@@ -124,14 +124,14 @@ class MilvusManager:
         video_ids = [m["video_id"] for m in metadata]
         content_types = [m.get("content_type", "transcript") for m in metadata]
         
-        # 对content进行截断，确保不超过512字符的限制
+        # 对content进行截断，确保不超过2048字符的限制
         contents = []
         for m in metadata:
             content = m["content"]
-            if len(content) > 512:
-                logger.warning(f"文本内容长度({len(content)})超过Milvus限制(512)，进行截断")
+            if len(content) > 2048:
+                logger.warning(f"文本内容长度({len(content)})超过Milvus限制(2048)，进行截断")
                 # 截断并添加省略号
-                content = content[:509] + "..."
+                content = content[:2045] + "..."
             contents.append(content)
             
         start_times = [m.get("start_time", 0.0) for m in metadata]
@@ -155,13 +155,13 @@ class MilvusManager:
             logger.error(f"插入向量失败: {str(e)}")
             raise
     
-    def search_vectors(self, query_vector: np.ndarray, top_k: int = 5, 
+    def search_vectors(self, query_vector: np.ndarray, top_k: int = 1, 
                       filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """搜索相似向量
         
         Args:
             query_vector: 查询向量
-            top_k: 返回结果数量
+            top_k: 返回结果数量，必须大于0
             filters: 过滤条件
             
         Returns:
@@ -169,6 +169,11 @@ class MilvusManager:
         """
         if not self.is_connected:
             self.connect()
+        
+        # 确保top_k是有效的正整数
+        if not isinstance(top_k, int) or top_k <= 0:
+            top_k = 1
+            logger.warning(f"无效的top_k值: {top_k}，已设置为默认值1")
         
         # 加载集合
         self.collection.load()

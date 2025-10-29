@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, Integer, Float, DateTime, Enum, ForeignKey, Text, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 import enum
 import uuid
 
@@ -46,5 +47,25 @@ class Video(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
     
+    # 与视频大纲的关系
+    outline = relationship("VideoOutline", back_populates="video", uselist=False, cascade="all, delete-orphan")
+    
     def __repr__(self):
         return f"<Video(id={self.id}, filename={self.filename}, status={self.status})>"
+
+
+class VideoOutline(Base):
+    """视频大纲模型"""
+    __tablename__ = "video_outlines"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    video_id = Column(String, ForeignKey("videos.id"), unique=True, nullable=False)
+    outline_data = Column(JSON, nullable=False)  # 存储完整的大纲JSON数据
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # 与视频的关系
+    video = relationship("Video", back_populates="outline")
+    
+    def __repr__(self):
+        return f"<VideoOutline(id={self.id}, video_id={self.video_id})>"

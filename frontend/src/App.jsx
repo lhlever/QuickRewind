@@ -86,8 +86,17 @@ function App() {
 
   // 将搜索结果格式化为聊天消息
   const formatSearchResultsForChat = (results, query) => {
-    // 确保results是数组格式
-    const resultsArray = Array.isArray(results) ? results : [];
+    console.log('原始搜索结果:', results);
+    // 处理后端返回的数据结构 {results: [...], total: n}
+    let resultsArray = [];
+    if (Array.isArray(results)) {
+      // 兼容数组格式的返回结果
+      resultsArray = results;
+    } else if (results && Array.isArray(results.results)) {
+      // 处理后端返回的数据结构 {results: [...], total: n}
+      resultsArray = results.results;
+    }
+    console.log('处理后的结果数组:', resultsArray);
     
     if (resultsArray.length === 0) {
       // 没有找到结果

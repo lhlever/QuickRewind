@@ -21,17 +21,18 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     
-    # 火山引擎配置
+    # 火山引擎配置（简化版）
     volcengine_api_key: str = "your-volcengine-api-key"
-    volcengine_secret_key: str = "your-volcengine-secret-key"
-    volcengine_region: str = "cn-beijing"
-    volcengine_model: str = "ERNIE-Bot-4"
+    volcengine_region: str = "https://ark.cn-beijing.volces.com/api/v3"
+    volcengine_model: str = "kimi-k2-250905"
+    volcengine_embedding_model: str = "text-embedding-v1"
+    volcengine_embedding_dim: int = 2560
     
     # Milvus配置
     milvus_host: str = "localhost"
     milvus_port: int = 19530
     milvus_collection_name: str = "video_content_vectors"
-    milvus_dim: int = 768
+    milvus_dim: int = 2560
     
     # Redis配置
     redis_url: str = "redis://localhost:6379/0"

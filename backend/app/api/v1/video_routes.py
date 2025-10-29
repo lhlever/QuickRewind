@@ -11,7 +11,7 @@ from app.services.speech_recognition import speech_recognizer
 from app.services.llm_service import llm_service
 from app.core.database import get_db, SessionLocal
 from app.core.mcp import mcp_server
-from app.models.video import Video, VideoStatus
+from app.models.video import Video, VideoStatus, VideoOutline
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 import time
@@ -259,11 +259,37 @@ def _process_video_task(video_id: str, db: Session):
             video.status = VideoStatus.ANALYZING
             db.commit()
             
-            # 步骤4: 生成摘要
-            start_step(video_id, "生成摘要")
-            summary = llm_service.generate_summary(video.transcript_text)
-            video.summary = summary
-            complete_step(video_id, "生成摘要")
+            # 步骤4: 生成视频大纲
+            start_step(video_id, "生成视频大纲")
+            # 读取SRT文件
+            with open(video.subtitle_path, 'r', encoding='utf-8') as f:
+                srt_content = f.read()
+            
+            # 生成大纲
+            outline_data = llm_service.generate_video_outline(srt_content)
+            
+            # 创建VideoOutline记录
+            video_outline = VideoOutline(
+                id=str(uuid.uuid4()),
+                video_id=video.id,
+                outline_data=outline_data
+            )
+            db.add(video_outline)
+            
+            # 从大纲生成简短摘要（作为原摘要字段的替代）
+            if outline_data and 'main_sections' in outline_data and outline_data['main_sections']:
+                # 从大纲的章节标题和总结生成摘要
+                summary_parts = []
+                for section in outline_data['main_sections'][:3]:  # 只取前3个主要章节
+                    if 'title' in section:
+                        summary_parts.append(section['title'])
+                    if 'summary' in section:
+                        summary_parts.append(section['summary'])
+                # 生成简短摘要
+                summary = ' '.join(summary_parts)[:500]  # 限制长度
+                video.summary = summary
+                
+            complete_step(video_id, "生成视频大纲")
             db.commit()
             
             # 步骤5: 向量存储
@@ -286,33 +312,8 @@ def _process_video_task(video_id: str, db: Session):
                 vectors = []
                 metadata = []
                 
-                # 1. 为整体转录文本生成向量（保留原有功能）
-                logger.info(f"开始为视频 {video_id} 生成整体转录文本向量")
-                transcript_embedding = llm_service.generate_embedding(video.transcript_text)
-                logger.info(f"转录文本向量生成成功，维度: {len(transcript_embedding)}")
-                vectors.append(np.array(transcript_embedding))
-                metadata.append({
-                    "video_id": video_id,
-                    "content_type": "transcript",
-                    "content": video.transcript_text[:500] + "..." if len(video.transcript_text) > 500 else video.transcript_text,
-                    "start_time": 0.0,
-                    "end_time": duration
-                })
-                
-                # 2. 为摘要生成向量（保留原有功能）
-                logger.info(f"开始为视频 {video_id} 生成摘要向量")
-                summary_embedding = llm_service.generate_embedding(summary)
-                logger.info(f"摘要向量生成成功，维度: {len(summary_embedding)}")
-                vectors.append(np.array(summary_embedding))
-                metadata.append({
-                    "video_id": video_id,
-                    "content_type": "summary",
-                    "content": summary,
-                    "start_time": 0.0,
-                    "end_time": duration
-                })
-                
-                # 3. 为每个字幕段落单独生成向量（新增功能）
+                # 只为每个字幕段落生成向量，不存储整体转录和摘要的向量
+                # 按照要求，只保存单个句子的向量
                 if recognition_result and 'segments' in recognition_result:
                     segments = recognition_result['segments']
                     logger.info(f"开始为视频 {video_id} 的 {len(segments)} 个字幕段落生成向量")
@@ -356,7 +357,7 @@ def _process_video_task(video_id: str, db: Session):
                                 start_time=metadata[i]["start_time"],
                                 end_time=metadata[i]["end_time"],
                                 vector_metadata="{}",
-                                vector_dim=len(transcript_embedding)
+                                vector_dim=len(vectors[i])  # 使用当前向量的维度
                             )
                             db.add(vector_index)
                             index_count += 1
@@ -595,15 +596,36 @@ async def get_video_outline(
         if not video:
             raise HTTPException(status_code=404, detail="视频不存在")
         
+        # 检查是否已有VideoOutline记录
+        from app.models.video import VideoOutline
+        video_outline = db.query(VideoOutline).filter(VideoOutline.video_id == video_id).first()
+        
+        if video_outline:
+            return {
+                "video_id": video_id,
+                "outline": video_outline.outline_data,
+                "has_outline": True
+            }
+        
         if not video.transcript_text:
             raise HTTPException(status_code=400, detail="视频尚未转录，无法生成大纲")
         
         # 生成大纲
-        outline = llm_service.generate_outline(video.transcript_text)
+        outline_data = llm_service.generate_outline(video.transcript_text)
+        
+        # 创建VideoOutline记录
+        video_outline = VideoOutline(
+            id=str(uuid.uuid4()),
+            video_id=video_id,
+            outline_data=outline_data
+        )
+        db.add(video_outline)
+        db.commit()
         
         return {
             "video_id": video_id,
-            "outline": outline
+            "outline": outline_data,
+            "has_outline": True
         }
     except HTTPException:
         raise
@@ -623,27 +645,49 @@ async def search_videos(
         if not query:
             return {"results": [], "total": 0}
         
+        logger.info(f"开始搜索视频，查询内容: {query}")
+        
         # 优先使用向量搜索（通过MCP工具）
         try:
             # 调用MCP工具进行向量搜索
+            logger.info(f"调用MCP工具 search_video_by_vector 进行向量搜索")
             vector_search_response = await mcp_server.call_tool_async(
                 tool_name="search_video_by_vector",
-                parameters={"query": query}
+                parameters={"query": query, "top_k": 10}  # 明确指定top_k参数
             )
+            
+            # 添加详细的响应结构日志
+            logger.info(f"向量搜索响应状态: {vector_search_response.success}")
+            logger.info(f"向量搜索响应类型: {type(vector_search_response.result)}")
+            if isinstance(vector_search_response.result, dict):
+                logger.info(f"向量搜索响应包含字段: {list(vector_search_response.result.keys())}")
+                search_results = vector_search_response.result.get("results", [])
+                total = vector_search_response.result.get("total", 0)
+                logger.info(f"向量搜索结果数量: {len(search_results)}, 总数: {total}")
+                # 记录第一个结果的结构用于调试
+                if search_results:
+                    logger.info(f"第一个搜索结果的结构: {list(search_results[0].keys())}")
             
             if vector_search_response.success and isinstance(vector_search_response.result, dict):
                 search_results = vector_search_response.result.get("results", [])
                 total = vector_search_response.result.get("total", 0)
-                logger.info(f"向量搜索完成，返回 {total} 个结果")
-                return {
+                logger.info(f"向量搜索完成，返回 {total} 个结果，准备返回给前端")
+                
+                # 确保返回的数据格式正确
+                response_data = {
                     "results": search_results,
                     "total": total,
                     "search_type": "vector"
                 }
+                logger.info(f"最终返回给前端的数据结构: {list(response_data.keys())}")
+                return response_data
             else:
                 logger.warning(f"向量搜索失败或返回格式不正确，回退到简单搜索")
+                logger.warning(f"向量搜索失败详情: {str(vector_search_response.error) if hasattr(vector_search_response, 'error') else '未知错误'}")
         except Exception as e:
             logger.warning(f"调用向量搜索MCP工具失败: {str(e)}，回退到简单搜索")
+            import traceback
+            logger.warning(f"详细错误堆栈: {traceback.format_exc()}")
         
         # 回退方案：简单数据库搜索
         conditions = [Video.filename.ilike(f"%{query}%")]
