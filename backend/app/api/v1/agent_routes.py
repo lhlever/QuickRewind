@@ -43,6 +43,7 @@ class VideoInfo(BaseModel):
     title: Optional[str] = Field(default=None, description="视频标题")
     timestamp: Optional[float] = Field(default=None, description="时间戳（秒）")
     thumbnail: Optional[str] = Field(default=None, description="缩略图URL")
+    video_link: Optional[str] = Field(default=None, description="完整视频链接，用于前端跳转到大纲页面")
     relevance_score: Optional[float] = Field(default=None, description="相关性得分")
 
 
@@ -84,11 +85,15 @@ async def chat_with_agent(request: AgentRequest) -> AgentResponse:
         logger.info(f"[Planning-then-Execution模式] 收到Agent请求: {request.message[:100]}...")
         
         # 处理请求 - 使用Planning-then-Execution模式
-        response_text = await agent_service.process_request(
+        response_data = await agent_service.process_request(
             request=request.message,
             chat_history=None,  # 可以根据需要添加聊天历史支持
             config=request.config
         )
+        
+        # 从响应数据中提取文本和视频信息
+        response_text = response_data.get("text", "")
+        video_info_list = response_data.get("video_info", [])
         
         processing_time = time.time() - start_time
         
@@ -98,82 +103,13 @@ async def chat_with_agent(request: AgentRequest) -> AgentResponse:
         logger.info(response_text)
         logger.info("----------------------")
         
-        # 提取视频信息（首先尝试JSON格式，然后尝试从普通文本提取）
-        video_info_list = []
+        # 记录视频信息
+        if video_info_list:
+            logger.info(f"[Planning-then-Execution模式] 从响应中提取到 {len(video_info_list)} 个视频信息")
+        else:
+            logger.info("[Planning-then-Execution模式] 响应中没有视频信息")
         
-        # 首先尝试从响应文本中提取JSON格式的视频信息
-        try:
-            import re, json
-            # 查找格式为 ```json {"videos":[...]} ``` 的文本块
-            json_pattern = r'```json\s*(\{"videos":\[.*?\]\})\s*```'
-            json_matches = re.search(json_pattern, response_text, re.DOTALL)
-            
-            if json_matches:
-                json_data = json_matches.group(1)
-                video_data = json.loads(json_data)
-                
-                if 'videos' in video_data and isinstance(video_data['videos'], list):
-                    for video in video_data['videos']:
-                        video_info = VideoInfo(
-                            video_id=video.get('video_id'),
-                            title=video.get('title'),
-                            timestamp=video.get('timestamp'),
-                            thumbnail=video.get('thumbnail'),
-                            relevance_score=video.get('relevance_score')
-                        )
-                        video_info_list.append(video_info)
-                
-                logger.info(f"[DEBUG] 成功解析到 {len(video_info_list)} 个视频信息（JSON格式）")
-            else:
-                logger.info("[DEBUG] 未找到JSON格式的视频信息，尝试从普通文本中提取")
-                
-                # 如果没有找到JSON格式，尝试从普通文本中提取视频信息
-                # 匹配视频标题和链接
-                video_title_pattern = r'-\s*视频标题[:：]\s*([^\n]+)'
-                video_link_pattern = r'-\s*视频链接[:：]\s*([^\n]+)'
-                similarity_pattern = r'-\s*相似度[:：]\s*([\d.]+)'
-                
-                titles = re.findall(video_title_pattern, response_text)
-                links = re.findall(video_link_pattern, response_text)
-                similarities = re.findall(similarity_pattern, response_text)
-                
-                # 处理提取到的信息
-                max_length = max(len(titles), len(links), len(similarities))
-                for i in range(max_length):
-                    # 从链接中提取视频ID
-                    video_id = None
-                    if i < len(links):
-                        # 尝试从链接中提取视频ID，假设格式为 /api/v1/videos/{video_id}/...
-                        id_match = re.search(r'/videos/([^/]+)/', links[i])
-                        if id_match:
-                            video_id = id_match.group(1)
-                    
-                    video_info = VideoInfo(
-                        video_id=video_id,
-                        title=titles[i].strip() if i < len(titles) else None,
-                        relevance_score=float(similarities[i]) if i < len(similarities) else None
-                    )
-                    video_info_list.append(video_info)
-                
-                if video_info_list:
-                    logger.info(f"[DEBUG] 从普通文本中提取到 {len(video_info_list)} 个视频信息")
-                else:
-                    logger.info("[DEBUG] 无法从普通文本中提取视频信息")
-                
-        except Exception as e:
-            logger.error(f"[DEBUG] 解析视频信息时出错: {str(e)}")
-            
-            # 即使出错，也尝试基本的文本提取作为最后的后备方案
-            try:
-                import re
-                # 尝试提取视频标题
-                title_match = re.search(r'视频标题[:：]\s*([^\n]+)', response_text)
-                if title_match:
-                    video_info = VideoInfo(title=title_match.group(1).strip())
-                    video_info_list.append(video_info)
-                    logger.info("[DEBUG] 作为后备方案，成功提取到基本视频信息")
-            except:
-                logger.error("[DEBUG] 后备提取方案也失败")
+        
         
         # 如果没有找到视频信息，尝试从metadata中提取（如果agent_service.process_request支持返回额外信息）
         # 注意：这里可能需要修改agent_service.process_request方法以支持返回视频信息

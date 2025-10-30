@@ -144,11 +144,31 @@ function App() {
 
   // 处理视频链接点击
   const handleVideoClick = (videoId) => {
-    // 从保存的搜索结果中找到对应的视频
-    const video = searchResults.find(v => v.id === videoId);
+    console.log('处理视频点击，videoId:', videoId);
+    // 先从搜索结果中查找视频
+    let video = searchResults.find(v => v.id === videoId);
+    
+    // 如果没找到，尝试从所有消息中查找包含这个videoId的视频结果
+    if (!video) {
+      console.log('在searchResults中未找到，尝试从消息历史中查找');
+      for (const msg of messages) {
+        if (msg.videoResults && Array.isArray(msg.videoResults)) {
+          const foundVideo = msg.videoResults.find(v => v.id === videoId);
+          if (foundVideo) {
+            video = foundVideo;
+            break;
+          }
+        }
+      }
+    }
+    
+    // 如果找到视频，设置数据并切换视图
     if (video) {
+      console.log('找到视频数据:', video);
       setVideoData(video);
       setActiveView('player');
+    } else {
+      console.error('未找到ID为', videoId, '的视频');
     }
   }
 
@@ -205,6 +225,7 @@ function App() {
         relevance: 95,
         similarity: 95,
         matchedSubtitles: '这是一个关于React基础概念的详细讲解，包括组件、状态和属性等核心知识点。',
+        matched_subtitles: '这是一个关于React基础概念的详细讲解，包括组件、状态和属性等核心知识点。',
         snippet: 'React基础概念详解',
         thumbnail: 'https://picsum.photos/400/225?random=1',
         timestamp: '02:15',
@@ -217,6 +238,7 @@ function App() {
         relevance: 88,
         similarity: 88,
         matchedSubtitles: '在这个视频中，我们将深入探讨React Hooks的使用方法和最佳实践。',
+        matched_subtitles: '在这个视频中，我们将深入探讨React Hooks的使用方法和最佳实践。',
         snippet: 'React Hooks使用详解',
         thumbnail: 'https://picsum.photos/400/225?random=2',
         timestamp: '01:30',
@@ -229,6 +251,7 @@ function App() {
         relevance: 82,
         similarity: 82,
         matchedSubtitles: '学习如何通过代码分割、懒加载和其他技术来优化React应用的性能。',
+        matched_subtitles: '学习如何通过代码分割、懒加载和其他技术来优化React应用的性能。',
         snippet: 'React应用性能优化',
         thumbnail: 'https://picsum.photos/400/225?random=3',
         timestamp: '03:45',
@@ -241,6 +264,7 @@ function App() {
         relevance: 75,
         similarity: 75,
         matchedSubtitles: '本教程将介绍如何在React应用中集成Redux进行状态管理。',
+        matched_subtitles: '本教程将介绍如何在React应用中集成Redux进行状态管理。',
         snippet: 'React与Redux集成',
         thumbnail: 'https://picsum.photos/400/225?random=4',
         timestamp: '05:20',
@@ -253,6 +277,7 @@ function App() {
         relevance: 70,
         similarity: 70,
         matchedSubtitles: '学习如何使用React Router进行前端路由管理和页面导航。',
+        matched_subtitles: '学习如何使用React Router进行前端路由管理和页面导航。',
         snippet: 'React Router使用指南',
         thumbnail: 'https://picsum.photos/400/225?random=5',
         timestamp: '08:10',
@@ -311,9 +336,12 @@ function App() {
             title: video.title || '未命名视频',
             relevance: video.relevance_score || 75,
             similarity: video.relevance_score || 75,
-            matchedSubtitles: '',
+            matchedSubtitles: `与"${userQuery}"相关的视频内容`,
+            matched_subtitles: `与"${userQuery}"相关的视频内容`,
             timestamp: video.timestamp || '',
-            thumbnail: video.thumbnail || ''
+            thumbnail: video.thumbnail || '',
+            snippet: video.title || '',
+            duration: '00:00'
           }));
           console.log('从API响应中提取的视频信息:', videoResults);
         }

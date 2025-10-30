@@ -337,11 +337,21 @@ class Agent:
             Final Answer: [对用户问题的最终回答]
             
             ### 视频信息返回格式（重要）：
-            如果您在回答中涉及到视频信息，请在最终回答之后，以JSON格式返回视频信息列表。格式如下：
-            ```json
-            {"videos":[{"video_id":"视频ID","title":"视频标题","timestamp":时间戳（数字类型）,"thumbnail":"缩略图URL","relevance_score":相关性得分（数字类型）}]}
-            ```
-            请确保JSON格式正确，不要包含任何其他文本或解释。如果没有相关视频信息，请不要包含这个JSON部分。
+            如果您在回答中涉及到视频信息，请在最终回答中使用以下格式返回视频信息列表：
+            <video_info>
+            [
+                {
+                    "video_id": "视频ID",
+                    "title": "视频标题",
+                    "thumbnail": "缩略图URL",
+                    "video_link": "视频链接",
+                    "relevance_score": 相关度分数
+                }
+            ]
+            </video_info>
+            
+            请将所有视频信息严格按照上述格式放置在<video_info>标签内，不要修改格式。
+            如果没有视频信息，请不要包含<video_info>标签。
             """
             
             # 初始化LLM包装器
@@ -833,6 +843,17 @@ class Agent:
                     - 只能使用用户在当前对话中明确输入的查询文本作为search_video_by_vector工具的query参数值
                     - 可以根据需要设置top_k参数控制返回结果数量，建议设置为5-10
                     - 注意：如果用户的输入中包含明确的查询内容，请直接使用这些内容作为query参数值，不要要求用户重复提供查询词
+                    
+                    ## 视频信息返回格式（重要）：
+                    如果您在回答中涉及到视频信息，请在最终回答中使用以下格式返回视频信息列表：
+                    <video_info>
+                    [
+                        {{{{"video_id": "视频ID", "title": "视频标题", "thumbnail": "缩略图URL", "video_link": "视频链接", "relevance_score": 相关度分数}}}}
+                    ]
+                    </video_info>
+                    
+                    请将所有视频信息严格按照上述格式放置在<video_info>标签内，不要修改格式。
+                    如果没有视频信息，请不要包含<video_info>标签。
                     """
                     
                     try:
@@ -1086,7 +1107,7 @@ class AgentService:
         """
         return self.agents.get(agent_id)
     
-    async def process_request(self, request: str, chat_history: Optional[List[Dict]] = None, config: Optional[AgentConfig] = None) -> str:
+    async def process_request(self, request: str, chat_history: Optional[List[Dict]] = None, config: Optional[AgentConfig] = None) -> Dict[str, Any]:
         """
         处理请求的便捷方法
         
@@ -1096,11 +1117,52 @@ class AgentService:
             config: Agent配置
             
         Returns:
-            处理结果
+            包含处理结果和视频信息的字典 {"text": str, "video_info": List[Dict]}
         """
+        # 创建增强的系统提示，要求大模型返回指定格式的视频信息
+        if config is None:
+            config = AgentConfig()
+        
+        # 使用请求包装器而不是修改Pydantic模型
+        # 我们将视频信息格式要求直接添加到请求中
+        enhanced_request = f"""
+{request}
+
+## 重要提示：如果你需要返回视频信息，请使用以下JSON格式：
+<video_info>
+[
+    {{"video_id": "视频ID", "title": "视频标题", "thumbnail": "缩略图URL", "video_link": "视频链接", "relevance_score": 相关度分数}}
+]
+</video_info>
+
+请严格按照上述格式返回视频信息。如果没有视频信息，请不要包含<video_info>标签。
+"""
+        
         agent = self.create_agent(config)
-        result = await agent.process_request(request, chat_history)
-        return result
+        result = await agent.process_request(enhanced_request, chat_history)
+        
+        # 解析结果，提取文本和视频信息
+        import re
+        video_info_list = []
+        
+        # 提取视频信息
+        video_info_match = re.search(r'<video_info>(.*?)</video_info>', result, re.DOTALL)
+        if video_info_match:
+            try:
+                import json
+                video_info_list = json.loads(video_info_match.group(1).strip())
+                # 清理原文本，移除video_info标签
+                text_content = re.sub(r'<video_info>.*?</video_info>', '', result, flags=re.DOTALL).strip()
+            except json.JSONDecodeError:
+                logger.error("视频信息JSON解析失败")
+                text_content = result
+        else:
+            text_content = result
+        
+        return {
+            "text": text_content,
+            "video_info": video_info_list
+        }
     
     def reset_agent(self, agent_id: int):
         """

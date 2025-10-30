@@ -66,12 +66,16 @@ const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadCli
         onVideoClick(videoId);
       }
     }
-    // 检查是否点击了视频卡片
-    else if (e.target.closest('.video-card') && onVideoClick) {
+    // 检查是否点击了视频卡片或卡片内的任何元素
+    else {
       const videoCard = e.target.closest('.video-card');
-      const videoId = videoCard.dataset.videoId;
-      if (videoId) {
-        onVideoClick(videoId);
+      if (videoCard && onVideoClick) {
+        const videoId = videoCard.dataset.videoId;
+        if (videoId) {
+          // 确保调用onVideoClick回调
+          console.log('点击了视频卡片，videoId:', videoId);
+          onVideoClick(videoId);
+        }
       }
     }
   };
@@ -85,42 +89,63 @@ const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadCli
     const validVideoResults = Array.isArray(videoResults) ? videoResults : [];
     
     // 为视频卡片创建HTML模板
-    const createVideoCard = (videoData) => {
-      // 确保videoData对象存在且为有效对象
-      if (!videoData || typeof videoData !== 'object') return '';
-      
-      // 安全地获取视频数据，提供默认值和范围检查
-      const videoId = videoData.id || Date.now().toString();
-      const title = videoData.title || '未知视频标题';
-      const relevance = Math.max(0, Math.min(100, videoData.relevance !== undefined ? videoData.relevance : (videoData.similarity || 75)));
-      const matchedSubtitles = videoData.matchedSubtitles || videoData.matched_subtitles || '暂无匹配内容信息';
-      
-      // 创建相关性标签
-      const relevanceBadge = `<div class="video-card-relevance">${relevance}%</div>`;
-      
-      // 创建字幕部分
-      const subtitleSection = `
-        <div class="video-card-subtitles">
-          <div class="subtitle-label">匹配内容:</div>
-          <div class="subtitle-text">${matchedSubtitles}</div>
-        </div>`;
-      
-      return `
-        <div class="video-card-container">
-          <div class="video-card" data-video-id="${videoId}">
-            <div class="video-card-thumbnail">
-              <div class="placeholder-thumbnail">
-                <span class="video-icon">🎬</span>
+      const createVideoCard = (videoData) => {
+        try {
+          // 确保videoData对象存在且为有效对象
+          if (!videoData || typeof videoData !== 'object') {
+            console.warn('无效的视频数据对象:', videoData);
+            return '';
+          }
+          
+          // 安全地获取视频数据，提供默认值和范围检查
+          const videoId = videoData.id || videoData.video_id || Date.now().toString();
+          const title = videoData.title || '未知视频标题';
+          const relevance = Math.max(0, Math.min(100, videoData.relevance !== undefined ? videoData.relevance : (videoData.similarity || (videoData.relevance_score || 75))));
+          const matchedSubtitles = videoData.matchedSubtitles || videoData.matched_subtitles || videoData.snippet || '暂无匹配内容信息';
+          const thumbnail = videoData.thumbnail || '';
+          
+          // 创建相关性标签
+          const relevanceBadge = `<div class="video-card-relevance">${relevance}%</div>`;
+          
+          // 创建字幕部分
+          const subtitleSection = `
+            <div class="video-card-subtitles">
+              <div class="subtitle-label">匹配内容:</div>
+              <div class="subtitle-text">${matchedSubtitles}</div>
+            </div>`;
+          
+          // 创建缩略图部分
+          const thumbnailSection = thumbnail ? 
+            `<img src="${thumbnail}" alt="${title}" class="video-thumbnail-image" />` : 
+            `<div class="placeholder-thumbnail"><span class="video-icon">🎬</span></div>`;
+          
+          return `
+            <div class="video-card-container">
+              <div class="video-card" data-video-id="${videoId}">
+                <div class="video-card-thumbnail">
+                  ${thumbnailSection}
+                  ${relevanceBadge}
+                </div>
+                <div class="video-card-content">
+                  <h4 class="video-card-title">${title}</h4>
+                  ${subtitleSection}
+                </div>
               </div>
-              ${relevanceBadge}
             </div>
-            <div class="video-card-content">
-              <h4 class="video-card-title">${title}</h4>
-              ${subtitleSection}
+          `;
+        } catch (error) {
+          console.error('创建视频卡片时出错:', error);
+          // 返回一个基本的错误卡片
+          return `
+            <div class="video-card-container">
+              <div class="video-card" data-video-id="error-${Date.now()}">
+                <div class="video-card-content">
+                  <h4 class="video-card-title">视频信息加载出错</h4>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      `;
+          `;
+        }
     };
     
     // 使用传入的视频结果创建卡片
