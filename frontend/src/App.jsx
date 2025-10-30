@@ -4,6 +4,7 @@ import ChatInterface from './components/ChatInterface'
 import VideoUpload from './components/VideoUpload'
 import VideoPlayer from './components/VideoPlayer'
 import SearchResults from './components/SearchResults'
+import VideoOutline from './components/VideoOutline'
 import { apiService } from './services/api'
 
 function App() {
@@ -15,7 +16,7 @@ function App() {
     '总结一下这个视频的主要内容'
   ]
   
-  const [activeView, setActiveView] = useState('chat') // 'chat', 'upload', 'player', 'search'
+  const [activeView, setActiveView] = useState('chat') // 'chat', 'upload', 'player', 'search', 'outline'
   const [searchResults, setSearchResults] = useState([])
   const [videoData, setVideoData] = useState(null)
   const [currentQuery, setCurrentQuery] = useState('')
@@ -67,8 +68,10 @@ function App() {
       // 显示加载状态
       setIsLoading(true);
       
-      // 调用API获取搜索结果
+      // 调用真实的API获取搜索结果
+      console.log('开始调用API搜索视频:', query);
       const results = await apiService.video.search(query);
+      console.log('API返回的搜索结果:', JSON.stringify(results));
       
       // 格式化搜索结果并添加到聊天
       formatSearchResultsForChat(results, query);
@@ -76,67 +79,67 @@ function App() {
     } catch (error) {
       console.error('搜索失败:', error);
       
-      // 使用模拟数据
-      const mockResults = generateMockSearchResults(query);
-      formatSearchResultsForChat(mockResults, query);
+      // 错误处理：创建一个错误消息
+      const errorMessage = {
+        id: Date.now(),
+        text: `搜索过程中出现错误: ${error.message}`,
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString(),
+        videoResults: []
+      };
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
   }
 
-  // 将搜索结果格式化为聊天消息
+  // 格式化搜索结果并添加到聊天界面
   const formatSearchResultsForChat = (results, query) => {
-    console.log('原始搜索结果:', results);
-    // 处理后端返回的数据结构 {results: [...], total: n}
-    let resultsArray = [];
-    if (Array.isArray(results)) {
+    console.log('formatSearchResultsForChat - 输入结果:', JSON.stringify(results));
+    
+    // 从响应中提取视频数据
+    let videosData = [];
+    if (results && Array.isArray(results.videos)) {
+      videosData = results.videos;
+      console.log('从videos字段获取的视频数量:', videosData.length);
+    } else if (Array.isArray(results)) {
       // 兼容数组格式的返回结果
-      resultsArray = results;
+      videosData = results;
+      console.log('直接使用数组格式的结果，数量:', videosData.length);
     } else if (results && Array.isArray(results.results)) {
-      // 处理后端返回的数据结构 {results: [...], total: n}
-      resultsArray = results.results;
-    }
-    console.log('处理后的结果数组:', resultsArray);
-    
-    if (resultsArray.length === 0) {
-      // 没有找到结果
-      setMessages(prev => [...prev, {
-        id: Date.now(),
-        text: `没有找到与"${query}"相关的视频内容。`,
-        sender: 'ai',
-        timestamp: new Date().toLocaleTimeString(),
-        videoResults: [] // 空结果数组
-      }]);
-      return;
+      videosData = results.results;
+      console.log('从results字段获取的视频数量:', videosData.length);
+    } else {
+      console.log('未找到有效的视频数据字段');
     }
     
-    // 格式化搜索结果消息
-    let searchResultsMessage = `我找到了 ${resultsArray.length} 个与"${query}"相关的视频：\n\n`;
+    // 获取消息文本
+    const messageText = results?.message || `未找到与'${query}'相关的视频结果`;
+    console.log('消息文本:', messageText);
+    console.log('准备添加到videoResults的数据:', JSON.stringify(videosData));
     
-    // 创建带有视频ID的特殊标记，后续在ChatInterface中处理为链接
-    resultsArray.slice(0, 3).forEach((video, index) => {
-      // 使用特殊格式标记视频标题，包含视频ID
-      const videoLink = `[视频链接:${video.id}]${video.title}[/视频链接]`;
-      searchResultsMessage += `${index + 1}. **${videoLink}**\n`;
-      searchResultsMessage += `   时长: ${video.duration}\n`;
-      searchResultsMessage += `   简介: ${video.snippet.substring(0, 100)}${video.snippet.length > 100 ? '...' : ''}\n\n`;
-    });
-    
-    if (resultsArray.length > 3) {
-      searchResultsMessage += `还有 ${resultsArray.length - 3} 个结果未显示...`;
-    }
-    
-    // 添加到聊天消息，同时保存实际的结果对象便于后续处理
-    setMessages(prev => [...prev, {
+    // 创建AI消息对象，确保videoResults字段正确设置
+    const aiMessage = {
       id: Date.now(),
-      text: searchResultsMessage,
+      text: messageText,
       sender: 'ai',
       timestamp: new Date().toLocaleTimeString(),
-      videoResults: resultsArray // 保存实际的视频结果数据
-    }]);
+      // 直接使用视频数据作为videoResults字段
+      videoResults: videosData
+    };
+    
+    console.log('创建的AI消息对象:', JSON.stringify(aiMessage));
+    
+    // 直接更新messages状态
+    setMessages(prev => {
+      const newMessages = [...prev, aiMessage];
+      console.log('更新后的消息列表长度:', newMessages.length);
+      console.log('最后一条消息的videoResults:', JSON.stringify(newMessages[newMessages.length-1].videoResults));
+      return newMessages;
+    });
     
     // 保存结果以便后续可能使用
-    setSearchResults(resultsArray);
+    setSearchResults(videosData);
   }
 
   // 处理视频链接点击
@@ -147,6 +150,12 @@ function App() {
       setVideoData(video);
       setActiveView('player');
     }
+  }
+
+  // 处理查看大纲按钮点击
+  const handleViewOutline = (videoData) => {
+    setVideoData(videoData);
+    setActiveView('outline');
   }
 
   // 处理预设问题点击
@@ -189,59 +198,71 @@ function App() {
 
   // 生成模拟搜索结果
   const generateMockSearchResults = (query) => {
-    // 根据查询生成相关的模拟搜索结果
-    return [
-      {
-        id: '1',
-        title: `如何有效${query} - 专业指南`,
-        snippet: `这是一个关于如何有效${query}的详细教程，包含实用技巧和步骤说明。通过本视频，您将学习到${query}的核心方法和最佳实践。`,
+    const mockVideos = [
+      { 
+        id: '1', 
+        title: 'React入门教程 - 基础概念详解',
+        relevance: 95,
+        similarity: 95,
+        matchedSubtitles: '这是一个关于React基础概念的详细讲解，包括组件、状态和属性等核心知识点。',
+        snippet: 'React基础概念详解',
         thumbnail: 'https://picsum.photos/400/225?random=1',
         timestamp: '02:15',
         duration: '12:45',
-        relevance: 98,
-        keywords: ['指南', '教程', query, '最佳实践']
+        keywords: ['React', '基础概念', '组件', '状态']
       },
-      {
-        id: '2',
-        title: `专业人士分享${query}技巧`,
-        snippet: `资深专家分享${query}的实用技巧，帮助您快速掌握核心技能。通过实际案例演示，让学习更加直观有效。`,
+      { 
+        id: '2', 
+        title: 'React Hooks完全指南',
+        relevance: 88,
+        similarity: 88,
+        matchedSubtitles: '在这个视频中，我们将深入探讨React Hooks的使用方法和最佳实践。',
+        snippet: 'React Hooks使用详解',
         thumbnail: 'https://picsum.photos/400/225?random=2',
         timestamp: '01:30',
         duration: '08:22',
-        relevance: 92,
-        keywords: [query, '技巧', '专家分享', '案例演示']
+        keywords: ['React', 'Hooks', '状态管理']
       },
-      {
-        id: '3',
-        title: `${query}的最新趋势与创新`,
-        snippet: `探索${query}领域的最新趋势和创新方法，了解行业前沿发展动态，为您的工作和学习提供新的思路和方向。`,
+      { 
+        id: '3', 
+        title: 'React性能优化技巧',
+        relevance: 82,
+        similarity: 82,
+        matchedSubtitles: '学习如何通过代码分割、懒加载和其他技术来优化React应用的性能。',
+        snippet: 'React应用性能优化',
         thumbnail: 'https://picsum.photos/400/225?random=3',
         timestamp: '03:45',
         duration: '15:30',
-        relevance: 87,
-        keywords: [query, '趋势', '创新', '前沿技术']
+        keywords: ['React', '性能优化', '代码分割']
       },
-      {
-        id: '4',
-        title: `${query}实战演练与常见问题解答`,
-        snippet: `通过实战演练展示${query}的完整流程，同时解答初学者常见的问题和困惑，帮助您避免常见陷阱。`,
+      { 
+        id: '4', 
+        title: 'React与Redux结合使用',
+        relevance: 75,
+        similarity: 75,
+        matchedSubtitles: '本教程将介绍如何在React应用中集成Redux进行状态管理。',
+        snippet: 'React与Redux集成',
         thumbnail: 'https://picsum.photos/400/225?random=4',
         timestamp: '05:20',
         duration: '18:15',
-        relevance: 84,
-        keywords: [query, '实战', '常见问题', '初学者指南']
+        keywords: ['React', 'Redux', '状态管理']
       },
-      {
-        id: '5',
-        title: `${query}专家访谈：行业洞察与建议`,
-        snippet: `独家访谈${query}领域的顶级专家，获取第一手的行业洞察和专业建议，提升您的知识水平和实践能力。`,
+      { 
+        id: '5', 
+        title: 'React路由配置详解',
+        relevance: 70,
+        similarity: 70,
+        matchedSubtitles: '学习如何使用React Router进行前端路由管理和页面导航。',
+        snippet: 'React Router使用指南',
         thumbnail: 'https://picsum.photos/400/225?random=5',
         timestamp: '08:10',
         duration: '22:40',
-        relevance: 80,
-        keywords: [query, '专家访谈', '行业洞察', '专业建议']
+        keywords: ['React', 'Router', '路由']
       }
-    ]
+    ];
+    
+    console.log('生成的模拟视频数据:', mockVideos); // 添加调试信息
+    return mockVideos;
   }
 
   // 生成AI响应
@@ -258,13 +279,44 @@ function App() {
     setIsLoading(true);
     
     try {
+      // 添加特殊关键词测试，当用户输入"测试视频卡片"时直接生成模拟视频结果
+      if (userQuery.toLowerCase().includes('测试视频卡片')) {
+        console.log('执行视频卡片测试');
+        // 直接生成模拟数据并显示视频卡片
+        const mockResults = generateMockSearchResults('React教程');
+        // 确保mockResults中包含matchedSubtitles字段
+        mockResults.forEach((video, index) => {
+          video.matchedSubtitles = `这是第${index + 1}个视频的匹配字幕内容，包含了与查询相关的关键信息。`;
+        });
+        formatSearchResultsForChat(mockResults, 'React教程');
+        return;
+      }
+      
       // 调用Agent API获取智能回复
       const apiResponse = await apiService.agent.sendMessage(userQuery);
       
-      // 提取回答内容，处理可能的不同响应格式
+      // 提取回答内容和视频信息，处理不同响应格式
       let responseContent = '';
+      let videoResults = [];
+      
       if (typeof apiResponse === 'object' && apiResponse !== null) {
+        // 提取文本响应
         responseContent = apiResponse.response || apiResponse.message || JSON.stringify(apiResponse);
+        
+        // 提取视频信息
+        if (apiResponse.video_info && Array.isArray(apiResponse.video_info)) {
+          // 将后端的video_info格式转换为前端需要的格式
+          videoResults = apiResponse.video_info.map(video => ({
+            id: video.video_id || String(Math.random()),
+            title: video.title || '未命名视频',
+            relevance: video.relevance_score || 75,
+            similarity: video.relevance_score || 75,
+            matchedSubtitles: '',
+            timestamp: video.timestamp || '',
+            thumbnail: video.thumbnail || ''
+          }));
+          console.log('从API响应中提取的视频信息:', videoResults);
+        }
       } else {
         responseContent = String(apiResponse);
       }
@@ -277,7 +329,7 @@ function App() {
         userQuery.toLowerCase().includes('search');
       
       // 如果是搜索查询，直接调用handleSearch进行视频搜索
-      // 否则，添加AI的普通回答到聊天
+      // 否则，添加AI的回答到聊天，包括可能的视频结果
       if (isSearchQuery) {
         await handleSearch(userQuery);
       } else {
@@ -285,7 +337,8 @@ function App() {
           id: Date.now(),
           text: responseContent,
           sender: 'ai',
-          timestamp: new Date().toLocaleTimeString()
+          timestamp: new Date().toLocaleTimeString(),
+          videoResults: videoResults // 添加视频结果到消息对象
         }]);
       }
     } catch (error) {
@@ -343,6 +396,7 @@ function App() {
   const renderContent = () => {
     switch (activeView) {
       case 'chat':
+        console.log('渲染ChatInterface组件，消息数据:', messages); // 添加调试信息
         return (
           <ChatInterface 
             onSearch={handleSearch}
@@ -351,6 +405,8 @@ function App() {
             isLoading={isLoading}
             onPresetClick={handlePresetClick}
             onVideoClick={handleVideoClick}
+            onViewOutline={handleViewOutline}
+            onResultSelect={handleResultSelect}
           />
         )
       case 'upload':
@@ -369,7 +425,33 @@ function App() {
           <SearchResults 
             results={searchResults}
             onResultSelect={handleResultSelect}
+            onViewOutline={handleViewOutline}
           />
+        )
+      case 'outline':
+        return (
+          <div className="outline-view">
+            <div className="outline-sidebar">
+              <VideoOutline 
+                outline={videoData?.outline || []}
+                onItemClick={(startTime) => {
+                  // 处理大纲项点击，更新视频播放位置
+                  const videoElement = document.getElementById('main-video');
+                  if (videoElement) {
+                    videoElement.currentTime = startTime;
+                  }
+                }}
+                highlightSegment={videoData?.highlightSegment}
+              />
+            </div>
+            <div className="video-player-container">
+              <VideoPlayer 
+                videoData={videoData}
+                autoPlay={true}
+                initialTime={videoData?.highlightSegment?.startTime || 0}
+              />
+            </div>
+          </div>
         )
       default:
         return <ChatInterface onSearch={handleSearch} onUploadClick={handleUploadStart} />

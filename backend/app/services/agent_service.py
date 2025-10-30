@@ -335,6 +335,13 @@ class Agent:
             
             Execution Complete: [执行完成的状态描述]
             Final Answer: [对用户问题的最终回答]
+            
+            ### 视频信息返回格式（重要）：
+            如果您在回答中涉及到视频信息，请在最终回答之后，以JSON格式返回视频信息列表。格式如下：
+            ```json
+            {"videos":[{"video_id":"视频ID","title":"视频标题","timestamp":时间戳（数字类型）,"thumbnail":"缩略图URL","relevance_score":相关性得分（数字类型）}]}
+            ```
+            请确保JSON格式正确，不要包含任何其他文本或解释。如果没有相关视频信息，请不要包含这个JSON部分。
             """
             
             # 初始化LLM包装器

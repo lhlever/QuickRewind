@@ -560,40 +560,24 @@ async def search_video_by_vector_tool(query: str, top_k: int = 10) -> Dict[str, 
                 # 计算相关度百分比
                 relevance = round((1.0 / (1.0 + group["best_match_score"])) * 100, 1)
                 
-                # 构建前端需要的结果格式
+                # 构建简化的结果格式，只包含必要信息
                 final_results.append({
-                    "id": str(video.id),  # 前端需要id字段而不是video_id
-                    "title": video.filename,  # 前端需要title字段而不是filename
-                    "video_id": str(video.id),  # 保留video_id以保持兼容性
-                    "filename": video.filename,
-                    "status": video.status.value,
-                    "summary": video.summary or "",
-                    "created_at": video.created_at.isoformat(),
-                    # 前端需要的字段
-                    "thumbnail": f"/api/v1/videos/{video.id}/thumbnail",  # 生成缩略图URL
-                    "duration": "00:00:00",  # 默认时长，实际应用中应从视频元数据获取
-                    "timestamp": f"{int(group['best_match_start_time'] // 60)}:{int(group['best_match_start_time'] % 60):02d}",  # 转换为MM:SS格式
-                    "relevance": relevance,  # 相关度百分比
-                    "snippet": group["best_match_content"][:150] + "..." if len(group["best_match_content"]) > 150 else group["best_match_content"],  # 摘要片段
-                    "keywords": [],  # 预留关键词字段
-                    # 保留原有best_match和matches数据
-                    "best_match": {
-                        "content": group["best_match_content"],
-                        "start_time": group["best_match_start_time"],
-                        "end_time": group["best_match_end_time"],
-                        "score": 1.0 / (1.0 + group["best_match_score"])  # 转换为相似度分数
-                    },
-                    "matches": group["matches"]
+                    "link": f"/api/v1/videos/{video.id}/outline",  # 跳转到大纲详情页的连接
+                    "title": video.filename,  # 视频标题
+                    "similarity": relevance,  # 视频匹配相似度（百分比）
+                    "matched_subtitles": group["best_match_content"]  # 匹配到的字幕内容
                 })
         
-        # 按最佳匹配分数排序
-        final_results.sort(key=lambda x: x["best_match"]["score"], reverse=True)
+        # 按相似度排序
+        final_results.sort(key=lambda x: x["similarity"], reverse=True)
         
         logger.info(f"向量搜索处理完成，共 {len(final_results)} 个去重后的视频结果")
-        # 打印完整的结果详情用于调试
-        import json
-        logger.info(f"完整搜索结果详情: {json.dumps(final_results, ensure_ascii=False, indent=2)}")
-        return {"results": final_results, "total": len(final_results)}
+        
+        # 返回简化格式，只包含是否匹配的标记和匹配的视频列表
+        return {
+            "is_matched": len(final_results) > 0,  # 是否匹配的标记
+            "videos": final_results  # 匹配的视频列表
+        }
     
     except Exception as e:
         logger.error(f"视频向量搜索失败: {str(e)}")

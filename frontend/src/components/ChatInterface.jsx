@@ -56,7 +56,7 @@ const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadCli
     }
   }
 
-  // 处理消息容器内的点击事件，捕获视频链接点击
+  // 处理消息容器内的点击事件，捕获视频链接和视频卡片点击
   const handleMessageClick = (e) => {
     // 检查是否点击了视频链接
     if (e.target.classList.contains('video-link') && onVideoClick) {
@@ -66,24 +66,82 @@ const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadCli
         onVideoClick(videoId);
       }
     }
+    // 检查是否点击了视频卡片
+    else if (e.target.closest('.video-card') && onVideoClick) {
+      const videoCard = e.target.closest('.video-card');
+      const videoId = videoCard.dataset.videoId;
+      if (videoId) {
+        onVideoClick(videoId);
+      }
+    }
   };
 
-  // 格式化消息文本，支持Markdown和视频链接
-  const formatMessage = (text) => {
-    if (!text) return '';
+  // 格式化消息文本，处理视频链接和Markdown格式
+  const formatMessage = (text, videoResults = []) => {
+    // 确保text是字符串类型
+    const messageText = typeof text === 'string' ? text : String(text || '');
     
-    // 首先处理视频链接格式: [视频链接:id]标题[/视频链接]
-    let formattedText = text.replace(/\[视频链接:(\d+)\]([^\[]*)\[\/视频链接\]/g, 
-      '<a href="#" class="video-link" data-video-id="$1">$2</a>'
-    );
+    // 确保videoResults是数组
+    const validVideoResults = Array.isArray(videoResults) ? videoResults : [];
     
-    // 然后处理Markdown粗体格式: **文本**
-    formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // 为视频卡片创建HTML模板
+    const createVideoCard = (videoData) => {
+      // 确保videoData对象存在且为有效对象
+      if (!videoData || typeof videoData !== 'object') return '';
+      
+      // 安全地获取视频数据，提供默认值和范围检查
+      const videoId = videoData.id || Date.now().toString();
+      const title = videoData.title || '未知视频标题';
+      const relevance = Math.max(0, Math.min(100, videoData.relevance !== undefined ? videoData.relevance : (videoData.similarity || 75)));
+      const matchedSubtitles = videoData.matchedSubtitles || videoData.matched_subtitles || '暂无匹配内容信息';
+      
+      // 创建相关性标签
+      const relevanceBadge = `<div class="video-card-relevance">${relevance}%</div>`;
+      
+      // 创建字幕部分
+      const subtitleSection = `
+        <div class="video-card-subtitles">
+          <div class="subtitle-label">匹配内容:</div>
+          <div class="subtitle-text">${matchedSubtitles}</div>
+        </div>`;
+      
+      return `
+        <div class="video-card-container">
+          <div class="video-card" data-video-id="${videoId}">
+            <div class="video-card-thumbnail">
+              <div class="placeholder-thumbnail">
+                <span class="video-icon">🎬</span>
+              </div>
+              ${relevanceBadge}
+            </div>
+            <div class="video-card-content">
+              <h4 class="video-card-title">${title}</h4>
+              ${subtitleSection}
+            </div>
+          </div>
+        </div>
+      `;
+    };
     
-    // 处理换行符
+    // 使用传入的视频结果创建卡片
+    let videoCardsHTML = '';
+    if (validVideoResults.length > 0) {
+      // 使用实际的视频数据创建卡片，最多显示3个
+      videoCardsHTML = validVideoResults.slice(0, 3).map(video => createVideoCard(video)).join('');
+    }
+    
+    // 转换文本格式（简单的Markdown支持）
+    let formattedText = messageText || '';
+    formattedText = formattedText.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     formattedText = formattedText.replace(/\n/g, '<br>');
     
-    return formattedText;
+    // 返回完整的HTML，包括文本和视频卡片
+    return `
+      <div class="message-content">
+        <div class="text-content">${formattedText}</div>
+        <div class="video-cards-wrapper">${videoCardsHTML}</div>
+      </div>
+    `;
   };
 
   // 预设问题
@@ -106,35 +164,66 @@ const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadCli
         {messages.map((message, index) => {
           // 为最后一条消息添加ref
           const isLastMessage = index === messages.length - 1;
+          console.log("--------");
+          console.log(message);
+          console.log("--------");
+          // 详细调试信息
+          console.log(`处理消息 ${index} (ID: ${message.id})`, { 
+            text: message.text,
+            sender: message.sender,
+            hasVideoResults: message.videoResults && message.videoResults.length > 0,
+            videoResultsType: typeof message.videoResults,
+            videoResultsLength: Array.isArray(message.videoResults) ? message.videoResults.length : '非数组'
+          });
+          
+          // 处理视频结果，增强容错能力
+          let safeVideoResults = [];
+          
+          // 检查message.videoResults
+          if (message.videoResults) {
+            console.log('消息中的videoResults类型:', typeof message.videoResults);
+            console.log('消息中的videoResults结构:', message.videoResults);
+            
+            // 如果是数组，直接使用
+            if (Array.isArray(message.videoResults)) {
+              safeVideoResults = message.videoResults;
+            }
+            // 如果是对象且有results字段，使用results字段
+            else if (typeof message.videoResults === 'object' && Array.isArray(message.videoResults.results)) {
+              safeVideoResults = message.videoResults.results;
+            }
+          }
+          
+          // 增强文本内容处理
+          const messageText = message.text || message.content || '';
           
           return (
             <div 
-              key={message.id} 
-              className={`message ${message.sender}`}
-            >
-              <div className="message-content">
-                <div 
-                  className="message-text"
-                  ref={isLastMessage ? lastMessageRef : null}
-                  dangerouslySetInnerHTML={{ __html: formatMessage(message.text) }}
-                ></div>
-                <div className="message-meta">
+                key={message.id}
+                className={`message ${message.sender}`}
+                data-has-videos={safeVideoResults.length > 0 ? 'true' : 'false'}
+              >
+                <div className="message-header">
+                  <span className="message-sender">
+                    {message.sender === 'ai' ? 'AI助手' : '您'}
+                  </span>
                   <span className="message-time">{message.timestamp}</span>
                 </div>
+                <div className="message-content">
+                  <div 
+                    className="message-text"
+                    ref={isLastMessage ? lastMessageRef : null}
+                    dangerouslySetInnerHTML={{ __html: formatMessage(messageText, safeVideoResults) }}
+                  ></div>
+                </div>
               </div>
-            </div>
           );
         })}
 
         {isLoading && (
-          <div className="message ai loading">
-            <div className="message-content">
-              <div className="typing-indicator">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-            </div>
+          <div className="loading-indicator">
+            <div className="loading-spinner"></div>
+            <span>正在生成回复...</span>
           </div>
         )}
       </div>

@@ -54,6 +54,16 @@
   background-color: #f1f5f9;
 }
 
+.outline-item.highlighted {
+  background-color: #dbeafe;
+  border-left: 4px solid #3b82f6;
+}
+
+.outline-item.highlighted .outline-item-header {
+  color: #1e40af;
+  font-weight: 500;
+}
+
 .outline-item-header {
   display: flex;
   align-items: center;

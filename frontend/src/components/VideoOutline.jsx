@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import './VideoOutline.css'
 
-const VideoOutline = ({ outline, onItemClick }) => {
+const VideoOutline = ({ outline, onItemClick, highlightSegment }) => {
   const [expandedItems, setExpandedItems] = useState(new Set())
 
   // 格式化时间
@@ -27,15 +27,30 @@ const VideoOutline = ({ outline, onItemClick }) => {
     onItemClick(item.startTime)
   }
 
+  // 检查项是否应该被高亮
+  const shouldHighlight = (item) => {
+    if (!highlightSegment) return false;
+    
+    // 检查当前项是否与高亮片段重叠
+    const itemStartTime = item.startTime || 0;
+    const itemEndTime = item.endTime || itemStartTime + 60; // 假设默认片段长度为60秒
+    const highlightStart = highlightSegment.startTime || 0;
+    const highlightEnd = highlightSegment.endTime || highlightStart + 60;
+    
+    // 检查时间范围重叠
+    return (itemStartTime <= highlightEnd && itemEndTime >= highlightStart);
+  }
+
   // 渲染大纲项
   const renderOutlineItem = (item, index) => {
     const isExpanded = expandedItems.has(item.id)
     const hasChildren = item.children && item.children.length > 0
+    const isHighlighted = shouldHighlight(item)
     
     return (
       <div 
         key={item.id} 
-        className={`outline-item ${index % 2 === 0 ? 'even' : 'odd'}`}
+        className={`outline-item ${index % 2 === 0 ? 'even' : 'odd'} ${isHighlighted ? 'highlighted' : ''}`}
       >
         <div 
           className="outline-item-header"

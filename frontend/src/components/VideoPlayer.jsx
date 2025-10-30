@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, forwardRef } from 'react'
 import './VideoPlayer.css'
 
-const VideoPlayer = forwardRef(({ video, initialTime }, ref) => {
+const VideoPlayer = forwardRef(({ video, videoData, initialTime = 0, autoPlay = false }, ref) => {
   const videoRef = useRef(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -22,13 +22,16 @@ const VideoPlayer = forwardRef(({ video, initialTime }, ref) => {
 
   // 处理视频加载
   useEffect(() => {
-    if (video && videoRef.current) {
+    // 优先使用videoData
+    const videoSource = videoData?.file || video;
+    
+    if (videoSource && videoRef.current) {
       try {
-        if (video.url) {
-          videoRef.current.src = video.url
-        } else if (video.file) {
+        if (videoSource.url) {
+          videoRef.current.src = videoSource.url
+        } else if (videoSource instanceof File) {
           // 为了演示，我们使用Blob URL
-          const videoUrl = URL.createObjectURL(video.file)
+          const videoUrl = URL.createObjectURL(videoSource)
           videoRef.current.src = videoUrl
           
           // 清理函数
@@ -40,19 +43,28 @@ const VideoPlayer = forwardRef(({ video, initialTime }, ref) => {
         console.error('Video loading error:', error)
       }
     }
-  }, [video])
+  }, [video, videoData])
 
-  // 处理初始时间设置
+  // 处理初始时间设置和自动播放
   useEffect(() => {
-    if (videoRef.current && initialTime !== null && 
-        typeof initialTime === 'number' && isFinite(initialTime) && initialTime >= 0) {
-      try {
-        videoRef.current.currentTime = initialTime
-      } catch (error) {
-        console.warn('Failed to set currentTime:', error)
+    if (videoRef.current) {
+      if (initialTime !== null && 
+          typeof initialTime === 'number' && isFinite(initialTime) && initialTime >= 0) {
+        try {
+          videoRef.current.currentTime = initialTime
+        } catch (error) {
+          console.warn('Failed to set currentTime:', error)
+        }
+      }
+      
+      if (autoPlay) {
+        videoRef.current.play().catch(err => {
+          console.warn('Auto play prevented:', err)
+        })
+        setIsPlaying(true)
       }
     }
-  }, [initialTime])
+  }, [initialTime, autoPlay])
 
   // 处理播放/暂停
   const togglePlayPause = () => {
@@ -99,20 +111,24 @@ const VideoPlayer = forwardRef(({ video, initialTime }, ref) => {
 
   return (
     <div className="video-player-container">
+      {videoData?.title && (
+        <h2 className="video-title">{videoData.title}</h2>
+      )}
       {/* 移除重复的标题栏，只保留主应用的标题栏 */}
       
       <div className="video-wrapper">
         <video
-          ref={videoRef}
-          className="video-element"
-          onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
-          onLoadedMetadata={(e) => setDuration(e.target.duration)}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-          onClick={togglePlayPause}
-        >
-          您的浏览器不支持HTML5视频播放。
-        </video>
+        id="main-video"
+        ref={videoRef}
+        className="video-element"
+        onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
+        onLoadedMetadata={(e) => setDuration(e.target.duration)}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onClick={togglePlayPause}
+      >
+        您的浏览器不支持HTML5视频播放。
+      </video>
         
         <div className="video-controls">
           <button 

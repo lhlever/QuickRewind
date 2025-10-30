@@ -41,11 +41,96 @@ const request = async (endpoint, options = {}) => {
 export const apiService = {
   // 视频相关API
   video: {
-    // 搜索视频
-    search: (query) => request('/v1/videos/search', {
-      method: 'POST',
-      body: JSON.stringify({ query }),
-    }),
+    // 搜索视频 - 返回完整的响应对象，包含message和videos字段
+    search: async (query) => {
+      try {
+        const response = await request('/v1/videos/search', {
+          method: 'POST',
+          body: JSON.stringify({ query }),
+        });
+        
+        console.log('API响应原始数据:', response);
+        
+        // 处理后端返回的完整格式: {message: string, is_matched: boolean, videos: []}
+        if (response && typeof response === 'object') {
+          // 确保videos数组存在且格式正确
+          if (!response.videos || !Array.isArray(response.videos)) {
+            response.videos = [];
+          } else {
+            // 处理每个视频对象，确保包含必要的字段
+            response.videos = response.videos.map(item => ({
+              id: item.id || (item.link ? item.link.split('/').pop() : String(Math.random())),
+              title: item.title || '未命名视频',
+              relevance: item.relevance !== undefined ? item.relevance : (item.similarity || 75),
+              similarity: item.similarity !== undefined ? item.similarity : (item.relevance || 75),
+              matchedSubtitles: item.matchedSubtitles || item.matched_subtitles || '',
+              link: item.link || '',
+              timestamp: item.timestamp || '',
+              duration: item.duration || ''
+            }));
+          }
+          
+          // 如果没有message字段，生成一个默认消息
+          if (!response.message) {
+            response.message = `在视频库中找到 ${response.videos.length} 条与"${query}"相关的结果`;
+          }
+          
+          // 返回完整的响应对象
+          return response;
+        }
+        
+        // 处理其他可能的响应格式
+        if (Array.isArray(response)) {
+          // 如果直接返回数组，包装成标准格式
+          return {
+            message: `在视频库中找到 ${response.length} 条与"${query}"相关的结果`,
+            is_matched: response.length > 0,
+            videos: response.map(item => ({
+              id: item.id || String(Math.random()),
+              title: item.title || '未命名视频',
+              relevance: item.relevance || item.similarity || 75,
+              similarity: item.similarity || item.relevance || 75,
+              matchedSubtitles: item.matchedSubtitles || item.snippet || '',
+              link: item.link || '',
+              timestamp: item.timestamp || '',
+              duration: item.duration || ''
+            }))
+          };
+        } else if (response && Array.isArray(response.results)) {
+          // 处理包含results数组的响应格式
+          return {
+            message: `在视频库中找到 ${response.results.length} 条与"${query}"相关的结果`,
+            is_matched: response.results.length > 0,
+            videos: response.results.map(item => ({
+              id: item.id || String(Math.random()),
+              title: item.title || '未命名视频',
+              relevance: item.relevance || item.similarity || 75,
+              similarity: item.similarity || item.relevance || 75,
+              matchedSubtitles: item.matchedSubtitles || item.snippet || '',
+              link: item.link || '',
+              timestamp: item.timestamp || '',
+              duration: item.duration || ''
+            }))
+          };
+        }
+        
+        // 默认返回格式
+        return {
+          message: '未找到匹配的视频结果',
+          is_matched: false,
+          videos: []
+        };
+      } catch (error) {
+        console.error('搜索视频失败:', error);
+        // 返回错误状态的标准格式
+        return {
+          message: '搜索失败，请稍后重试',
+          is_matched: false,
+          videos: [],
+          error: error.message
+        };
+      }
+    },
     
     // 上传视频
     upload: (formData, onProgress) => {

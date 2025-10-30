@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import './SearchResults.css'
 
-const SearchResults = ({ results, onResultSelect }) => {
+const SearchResults = ({ results, onResultSelect, onViewOutline }) => {
   const [selectedResult, setSelectedResult] = useState(null)
 
   // 处理结果项点击
@@ -21,7 +21,25 @@ const SearchResults = ({ results, onResultSelect }) => {
           type: 'video/mp4',
           // 在实际应用中，这里应该是真实的视频文件URL或Blob
         },
-        duration: convertDurationToSeconds(result.duration)
+        duration: convertDurationToSeconds(result.duration || '00:00:00')
+      })
+    }
+  }
+
+  // 处理查看大纲按钮点击
+  const handleViewOutline = (result, event) => {
+    event.stopPropagation() // 防止触发整个卡片的点击事件
+    if (onViewOutline) {
+      const mockOutline = generateMockOutline(result)
+      onViewOutline({
+        ...result,
+        outline: mockOutline,
+        duration: convertDurationToSeconds(result.duration || '00:00:00'),
+        // 记录当前片段的时间范围以便高亮
+        highlightSegment: {
+          startTime: 0,
+          endTime: 60 // 假设片段长度为60秒
+        }
       })
     }
   }
@@ -97,7 +115,7 @@ const SearchResults = ({ results, onResultSelect }) => {
   // 将时间格式转换为秒数
   const convertDurationToSeconds = (duration) => {
     // 假设duration格式为"MM:SS"或"HH:MM:SS"
-    const parts = duration.split(':').map(Number)
+    const parts = duration?.split(':').map(Number) || [0, 0]
     if (parts.length === 2) {
       return parts[0] * 60 + parts[1]
     } else if (parts.length === 3) {
@@ -108,73 +126,82 @@ const SearchResults = ({ results, onResultSelect }) => {
 
   return (
     <div className="search-results">
-    {/* 移除重复的标题栏，只保留主应用的标题栏 */}
-      
-      <div className="results-list">
+      {/* 卡片网格布局 */}
+      <div className="results-grid">
         {results.map((result) => (
           <div 
             key={result.id}
-            className={`result-item ${selectedResult === result.id ? 'selected' : ''}`}
+            className={`video-card ${selectedResult === result.id ? 'selected' : ''}`}
             onClick={() => handleResultClick(result)}
           >
-            <div className="result-thumbnail">
-              <img 
-                src={result.thumbnail} 
-                alt={result.title} 
-                loading="lazy"
-                className="thumbnail-image"
-              />
-              <div className="time-badge">{result.timestamp}</div>
-              <div className="play-overlay">
-                <div className="play-icon">▶️</div>
+            {/* 视频缩略图区域 */}
+            <div className="card-thumbnail">
+              {/* 使用占位图替代真实缩略图 */}
+              <div className="placeholder-thumbnail">
+                <span className="video-icon">📹</span>
               </div>
-            </div>
-            
-            <div className="result-content">
-              <h4 className="result-title">{result.title}</h4>
-              <div className="result-meta">
-                <span className="video-duration">{result.duration}</span>
-                {result.relevance && (
-                  <span className="relevance-score">
-                    相关度: {result.relevance}%
-                  </span>
-                )}
-              </div>
-              <p className="result-snippet">{result.snippet}</p>
-              
-              {result.keywords && result.keywords.length > 0 && (
-                <div className="result-keywords">
-                  {result.keywords.map((keyword, index) => (
-                    <span key={index} className="keyword-tag">
-                      {keyword}
-                    </span>
-                  ))}
+              {result.relevance !== undefined && (
+                <div className="similarity-badge">
+                  {result.relevance}%
                 </div>
               )}
             </div>
             
-            <button className="play-result-button">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="8 5 19 12 8 19 8 5"></polygon>
-              </svg>
-            </button>
+            {/* 卡片内容 */}
+            <div className="card-content">
+              {/* 视频标题 - 作为可点击链接 */}
+              <h4 
+                className="video-title clickable-title"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (onViewOutline) {
+                    const mockOutline = generateMockOutline(result);
+                    onViewOutline({
+                      ...result,
+                      outline: mockOutline,
+                      duration: convertDurationToSeconds(result.duration || '00:00:00'),
+                    });
+                  }
+                }}
+              >
+                {result.title}
+              </h4>
+              
+              {/* 相似度信息 */}
+              <div className="card-meta">
+                <span className="similarity-label">相似度:</span>
+                <span className="similarity-value">{result.relevance || 0}%</span>
+              </div>
+              
+              {/* 匹配到的字幕 */}
+              {result.matchedSubtitles && (
+                <div className="matched-subtitles">
+                  <div className="subtitle-label">匹配字幕:</div>
+                  <div className="subtitle-text">{result.matchedSubtitles}</div>
+                </div>
+              )}
+              
+              {/* 操作按钮 */}
+              <div className="card-actions">
+                <button 
+                  className="outline-btn"
+                  onClick={(e) => handleViewOutline(result, e)}
+                >
+                  查看大纲
+                </button>
+              </div>
+            </div>
           </div>
         ))}
       </div>
       
+      {/* 无结果状态 */}
       {results.length === 0 && (
         <div className="no-results">
           <div className="no-results-icon">🔍</div>
           <p>未找到匹配的视频内容</p>
           <p className="suggestion">请尝试使用不同的关键词搜索</p>
-          <div className="search-tips">
-            <p>提示：</p>
-            <ul>
-              <li>检查关键词是否拼写正确</li>
-              <li>尝试使用更具体的词汇</li>
-              <li>使用相关术语或技术词汇</li>
-            </ul>
-          </div>
         </div>
       )}
     </div>
