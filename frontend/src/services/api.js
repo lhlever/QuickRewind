@@ -41,6 +41,31 @@ const request = async (endpoint, options = {}) => {
 export const apiService = {
   // 视频相关API
   video: {
+    // 获取视频基本信息
+    getVideoInfo: async (videoId) => {
+      console.log(`正在获取视频信息: ${videoId}`);
+      try {
+        const response = await request(`/v1/videos/${videoId}`);
+        console.log(`成功获取视频信息:`, response);
+        return response;
+      } catch (error) {
+        console.error(`获取视频信息失败:`, error);
+        throw error;
+      }
+    },
+    // 获取视频大纲
+    getOutline: async (videoId) => {
+      console.log(`正在获取视频大纲: ${videoId}`);
+      try {
+        const response = await request(`/v1/videos/${videoId}/outline`);
+        console.log(`成功获取视频大纲:`, response);
+        return response;
+      } catch (error) {
+        console.error(`获取视频大纲失败:`, error);
+        throw error;
+      }
+    },
+    
     // 搜索视频 - 返回完整的响应对象，包含message和videos字段
     search: async (query) => {
       try {

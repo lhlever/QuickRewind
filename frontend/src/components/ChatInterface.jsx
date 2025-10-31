@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'react'
 import './ChatInterface.css'
 
-const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadClick, onPresetClick, onVideoClick }) => {
+const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadClick, onPresetClick, onVideoClick, onViewOutline }) => {
   const chatContainerRef = useRef(null)
   const lastMessageRef = useRef(null)
 
@@ -69,15 +69,35 @@ const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadCli
     // 检查是否点击了视频卡片或卡片内的任何元素
     else {
       const videoCard = e.target.closest('.video-card');
-      if (videoCard && onVideoClick) {
+      if (videoCard) {
         const videoId = videoCard.dataset.videoId;
-        if (videoId) {
-          // 确保调用onVideoClick回调
-          console.log('点击了视频卡片，videoId:', videoId);
-          onVideoClick(videoId);
+        const videoData = findVideoDataById(videoId);
+        if (videoId && videoData) {
+          // 优先使用onViewOutline处理视频卡片点击
+          if (onViewOutline) {
+            console.log('点击了视频卡片，调用onViewOutline，videoData:', videoData);
+            onViewOutline(videoData);
+          } else if (onVideoClick) {
+            console.log('点击了视频卡片，调用onVideoClick，videoId:', videoId);
+            onVideoClick(videoId);
+          }
         }
       }
     }
+  };
+  
+  // 根据视频ID查找完整的视频数据
+  const findVideoDataById = (videoId) => {
+    // 遍历所有消息中的videoResults
+    for (const message of messages) {
+      if (message.videoResults && Array.isArray(message.videoResults)) {
+        const foundVideo = message.videoResults.find(v => (v.id === videoId || v.video_id === videoId));
+        if (foundVideo) {
+          return foundVideo;
+        }
+      }
+    }
+    return null;
   };
 
   // 格式化消息文本，处理视频链接和Markdown格式

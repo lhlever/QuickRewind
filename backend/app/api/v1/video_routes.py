@@ -1,4 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends, Query
+from fastapi.responses import StreamingResponse
+import os
 from fastapi.responses import JSONResponse
 from typing import Dict, Any, List, Optional
 import uuid
@@ -147,26 +149,23 @@ async def upload_video(
 
 @router.get("/{video_id}")
 async def get_video_info(video_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
-    """获取视频信息"""
+    """获取视频信息 - 仅返回必要字段"""
     try:
         # 查询视频记录 - 确保video_id是字符串类型
         video = db.query(Video).filter(Video.id == video_id).first()
         if not video:
             raise HTTPException(status_code=404, detail="视频不存在")
         
-        # 获取视频技术信息
-        video_info = video_processor.get_video_info(video.filepath)
+        # 使用流式传输URL代替本地文件路径
+        # 创建流式传输的URL，指向我们的stream端点
+        # 注意：不包含/api前缀，因为Vite代理会自动添加
+        stream_url = f"/v1/videos/{video_id}/stream"
         
+        # 按照要求返回三个字段：video_id, filename, filePath
         return {
             "video_id": str(video.id),
             "filename": video.filename,
-            "status": video.status.value,
-            "file_size": video.filesize,
-            "created_at": video.created_at.isoformat(),
-            "updated_at": video.updated_at.isoformat() if video.updated_at else None,
-            "technical_info": video_info,
-            "transcript": video.transcript_text,
-            "summary": video.summary
+            "filePath": stream_url  # 返回流式传输URL而不是本地文件路径
         }
     except HTTPException:
         raise
@@ -586,6 +585,108 @@ async def query_video(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/{video_id}/stream")
+async def stream_video(video_id: str, db: Session = Depends(get_db)):
+    """提供视频文件流式访问，用于视频播放"""
+    try:
+        logger.info(f"开始处理视频流请求，视频ID: {video_id}")
+        
+        # 查询视频记录
+        video = db.query(Video).filter(Video.id == video_id).first()
+        if not video:
+            logger.error(f"视频不存在，ID: {video_id}")
+            raise HTTPException(status_code=404, detail="视频不存在")
+        
+        logger.info(f"找到视频记录: {video.filename}, 文件路径: {video.filepath}")
+        
+        # 检查文件是否存在
+        if not os.path.exists(video.filepath):
+            logger.error(f"视频文件不存在: {video.filepath}")
+            raise HTTPException(status_code=404, detail="视频文件不存在")
+        
+        # 获取文件大小
+        file_size = os.path.getsize(video.filepath)
+        logger.info(f"视频文件大小: {file_size} 字节")
+        
+        # 获取MIME类型 - 使用基于文件扩展名的映射（更可靠）
+        import mimetypes
+        
+        # 首先尝试使用mimetypes库
+        mime_type, _ = mimetypes.guess_type(video.filepath)
+        logger.info(f"mimetypes库检测到的MIME类型: {mime_type}")
+        
+        # 如果mimetypes库未能检测到或检测到的不是视频类型，则使用扩展名映射
+        if not mime_type or not mime_type.startswith("video/"):
+            # 尝试根据文件扩展名手动确定（优先级高于mimetypes）
+            ext = os.path.splitext(video.filepath)[1].lower()
+            logger.info(f"文件扩展名: {ext}")
+            
+            ext_to_mime = {
+                ".mp4": "video/mp4",
+                ".webm": "video/webm",
+                ".ogg": "video/ogg",
+                ".mov": "video/quicktime",
+                ".avi": "video/x-msvideo",
+                ".wmv": "video/x-ms-wmv",
+                ".mkv": "video/x-matroska"
+            }
+            
+            if ext in ext_to_mime:
+                mime_type = ext_to_mime[ext]
+                logger.info(f"使用扩展名映射的MIME类型: {mime_type}")
+            else:
+                mime_type = "video/mp4"  # 默认使用mp4格式
+                logger.warning(f"未识别的视频扩展名，使用默认MIME类型: {mime_type}")
+        
+        logger.info(f"最终确定的视频流MIME类型: {mime_type}")
+        
+        # 提供文件流式访问
+        async def video_stream():
+            try:
+                logger.info(f"开始流式传输视频文件: {video.filepath}")
+                with open(video.filepath, "rb") as f:
+                    # 读取文件头用于调试
+                    header = f.read(16)
+                    logger.debug(f"文件头字节（前16字节）: {header.hex()}")
+                    # 重置文件指针
+                    f.seek(0)
+                    
+                    # 开始流式传输
+                    chunk_count = 0
+                    while True:
+                        chunk = f.read(8192)  # 每次读取8KB
+                        if not chunk:
+                            break
+                        chunk_count += 1
+                        if chunk_count % 100 == 0:  # 每100个chunk记录一次
+                            logger.debug(f"已传输 {chunk_count * 8192} 字节")
+                        yield chunk
+                logger.info(f"视频文件传输完成")
+            except Exception as e:
+                logger.error(f"读取视频文件时出错: {str(e)}")
+                raise
+        
+        # 设置完整的响应头
+        headers = {
+            "Content-Length": str(file_size),
+            "Content-Disposition": f"inline; filename={video.filename}",
+            "Accept-Ranges": "bytes",  # 支持范围请求
+            "X-Content-Type-Options": "nosniff"  # 防止浏览器MIME类型嗅探
+        }
+        
+        logger.info(f"准备返回StreamingResponse，MIME类型: {mime_type}")
+        return StreamingResponse(
+            video_stream(),
+            media_type=mime_type,
+            headers=headers
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"提供视频流失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="视频播放失败")
+
+
 @router.get("/{video_id}/outline")
 async def get_video_outline(
     video_id: str,
@@ -845,3 +946,5 @@ async def search_videos(
             "matched_videos": []
         }
         return error_response
+
+

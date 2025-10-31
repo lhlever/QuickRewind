@@ -155,74 +155,47 @@ function App() {
   // 处理视频链接点击
   const handleVideoClick = async (videoId) => {
     console.log('处理视频点击，videoId:', videoId);
-    // 先从搜索结果中查找视频
-    let video = searchResults.find(v => v.id === videoId);
     
-    // 如果没找到，尝试从所有消息中查找包含这个videoId的视频结果
-    if (!video) {
-      console.log('在searchResults中未找到，尝试从消息历史中查找');
-      for (const msg of messages) {
-        if (msg.videoResults && Array.isArray(msg.videoResults)) {
-          const foundVideo = msg.videoResults.find(v => v.id === videoId);
-          if (foundVideo) {
-            video = foundVideo;
-            break;
-          }
-        }
-      }
-    }
-    
-    // 如果找到视频，设置数据并切换视图
-    if (video) {
-      console.log('找到视频数据:', video);
+    try {
+      setIsLoading(true);
       
-      // 获取视频大纲数据
-      try {
-        setIsLoading(true);
-        console.log('正在获取视频大纲，videoId:', videoId);
-        const outlineResponse = await apiService.video.getOutline(videoId);
-        console.log('获取到的视频大纲数据:', outlineResponse);
-        
-        // 合并视频数据和大纲数据
-        if (outlineResponse && outlineResponse.outline) {
-          // 转换大纲数据格式以匹配VideoOutline组件的期望格式
-          let formattedOutline = [];
-          if (outlineResponse.outline.main_sections && Array.isArray(outlineResponse.outline.main_sections)) {
-            formattedOutline = outlineResponse.outline.main_sections.map((section, index) => ({
-              id: `section-${index + 1}`,
-              title: section.title || `第${index + 1}节`,
-              startTime: convertTimeToSeconds(section.start_time || '00:00:00'),
-              endTime: convertTimeToSeconds(section.end_time || '00:00:00'),
-              snippet: section.summary || '',
-              children: section.subsections ? section.subsections.map((subsection, subIndex) => ({
-                id: `section-${index + 1}-${subIndex + 1}`,
-                title: subsection.title || `小节${subIndex + 1}`,
-                startTime: convertTimeToSeconds(subsection.start_time || '00:00:00'),
-                endTime: convertTimeToSeconds(subsection.end_time || '00:00:00'),
-                snippet: subsection.summary || ''
-              })) : []
-            }));
-          }
-          
-          // 更新视频数据，包含格式化后的大纲
-          const updatedVideoData = {
-            ...video,
-            outline: formattedOutline
-          };
-          setVideoData(updatedVideoData);
-        }
-      } catch (error) {
-        console.error('获取视频大纲失败:', error);
-        // 如果获取大纲失败，仍然显示视频，但不包含大纲
-        setVideoData(video);
-      } finally {
-        setIsLoading(false);
-      }
+      // 1. 先获取视频基本信息（包含流式URL）
+      console.log('正在获取视频基本信息，videoId:', videoId);
+      const videoInfoResponse = await apiService.video.getVideoInfo(videoId);
+      console.log('获取到的视频基本信息:', videoInfoResponse);
       
-      // 切换到outline视图，实现左右分栏显示
+      // 2. 再获取视频大纲数据
+      console.log('正在获取视频大纲，videoId:', videoId);
+      const outlineResponse = await apiService.video.getOutline(videoId);
+      console.log('获取到的视频大纲数据:', outlineResponse);
+      
+      // 3. 创建完整的视频数据对象，包含流式URL
+      const completeVideoData = {
+        id: videoId,
+        filename: videoInfoResponse.filename,
+        filePath: videoInfoResponse.filePath, // 这是流式URL
+        outline: outlineResponse?.outline || null
+      };
+      
+      console.log('完整的视频数据对象:', completeVideoData);
+      
+      // 设置视频数据
+      setVideoData(completeVideoData);
+      
+      // 切换到outline视图，实现左右分栏显示（包含视频播放）
       setActiveView('outline');
-    } else {
-      console.error('未找到ID为', videoId, '的视频');
+      
+    } catch (error) {
+      console.error('处理视频点击时出错:', error);
+      // 显示错误消息
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        text: `获取视频信息失败: ${error.message}`,
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+    } finally {
+      setIsLoading(false);
     }
   }
   
@@ -242,11 +215,169 @@ function App() {
     return 0;
   }
 
-  // 处理查看大纲按钮点击
-  const handleViewOutline = (videoData) => {
-    setVideoData(videoData);
-    setActiveView('outline');
-  }
+  // 处理查看视频大纲
+  const handleViewOutline = async (videoData) => {
+    console.log('\n=======================================');
+    console.log('[用户操作] 点击视频卡片，开始处理视频大纲和详情...');
+    console.log('[输入数据] videoData:', JSON.stringify(videoData, null, 2));
+    
+    const videoId = videoData.id || videoData.video_id;
+    if (!videoId) {
+      console.error('❌ 视频ID不存在，无法获取大纲');
+      setAppState(prev => ({ ...prev, error: '视频ID错误，无法加载大纲' }));
+      return;
+    }
+    
+    console.log(`[视频ID] ${videoId}`);
+    setIsLoading(true);
+    
+    try {
+      // ============ 步骤1: 获取视频大纲 ============
+      console.log('\n[第一步] 📋 开始获取视频大纲...');
+      console.log(`[第一步] 🟢 发送请求到: /v1/videos/${videoId}/outline`);
+      
+      const outlineStartTime = Date.now();
+      const outlineData = await apiService.video.getOutline(videoId);
+      const outlineEndTime = Date.now();
+      
+      console.log('[第一步] ✅ 视频大纲请求成功完成！');
+      console.log('[第一步] ⏱️ 请求耗时:', outlineEndTime - outlineStartTime, '毫秒');
+      console.log('[第一步] 📊 大纲数据:', JSON.stringify(outlineData, null, 2));
+      
+      // ============ 步骤2: 获取视频详情（包含播放地址） ============
+      console.log('\n[第二步] 🎬 开始获取视频详情（播放地址）...');
+      console.log(`[第二步] 🟢 发送请求到: /v1/videos/${videoId}`);
+      
+      const detailsStartTime = Date.now();
+      const videoDetailsData = await apiService.video.getDetails(videoId);
+      const detailsEndTime = Date.now();
+      
+      console.log('[第二步] ✅ 视频详情请求成功完成！');
+      console.log('[第二步] ⏱️ 请求耗时:', detailsEndTime - detailsStartTime, '毫秒');
+      console.log('[第二步] 📊 详情数据:', JSON.stringify(videoDetailsData, null, 2));
+      
+      // 验证返回的数据
+      console.log('\n[数据验证] 开始验证返回的大纲和详情数据...');
+      console.log('[数据验证] 大纲数据类型:', typeof outlineData);
+      console.log('[数据验证] 详情数据类型:', typeof videoDetailsData);
+      
+      // 提取用户要求的三个字段：video_id, filename, filePath
+      const extractedVideoInfo = {
+        video_id: videoDetailsData.video_id || videoId,
+        filename: videoDetailsData.filename || '未知文件名',
+        filePath: videoDetailsData.filePath || ''  // 注意：后端现在已改为使用filePath（大写P）
+      };
+      
+      console.log('\n[字段提取] 提取的视频详情字段:', JSON.stringify(extractedVideoInfo, null, 2));
+      
+      // 构建视频播放URL（根据filePath）
+      let videoUrl = '';
+      if (extractedVideoInfo.filePath) {
+        // 如果filePath是完整URL，直接使用
+        if (extractedVideoInfo.filePath.startsWith('http')) {
+          videoUrl = extractedVideoInfo.filePath;
+        } else {
+          // 否则构建完整URL
+          videoUrl = `http://localhost:8000${extractedVideoInfo.filePath}`;
+        }
+      }
+      
+      console.log('\n[URL构建] 构建的视频播放URL:', videoUrl);
+      
+      // 转换大纲数据格式以匹配VideoOutline组件的期望格式
+      let formattedOutline = [];
+      console.log('[大纲处理] 原始大纲数据:', JSON.stringify(outlineData, null, 2));
+      
+      // 检查大纲数据格式并进行适当的转换
+      if (outlineData && outlineData.outline) {
+        if (outlineData.outline.main_sections && Array.isArray(outlineData.outline.main_sections)) {
+          // 格式1: { outline: { main_sections: [...] } }
+          console.log('[大纲处理] 检测到格式1: 包含main_sections的大纲结构');
+          formattedOutline = outlineData.outline.main_sections.map((section, index) => ({
+            id: `section-${index + 1}`,
+            title: section.title || `第${index + 1}节`,
+            startTime: convertTimeToSeconds(section.start_time || '00:00:00'),
+            endTime: convertTimeToSeconds(section.end_time || '00:00:00'),
+            snippet: section.summary || '',
+            children: section.subsections ? section.subsections.map((subsection, subIndex) => ({
+              id: `section-${index + 1}-${subIndex + 1}`,
+              title: subsection.title || `小节${subIndex + 1}`,
+              startTime: convertTimeToSeconds(subsection.start_time || '00:00:00'),
+              endTime: convertTimeToSeconds(subsection.end_time || '00:00:00'),
+              snippet: subsection.summary || ''
+            })) : []
+          }));
+        } else if (Array.isArray(outlineData.outline)) {
+          // 格式2: { outline: [...] }
+          console.log('[大纲处理] 检测到格式2: 直接是数组的大纲结构');
+          formattedOutline = outlineData.outline;
+        }
+      } else if (Array.isArray(outlineData)) {
+        // 格式3: [...] (直接是数组)
+        console.log('[大纲处理] 检测到格式3: 直接是数组的大纲数据');
+        formattedOutline = outlineData;
+      }
+      
+      console.log('[大纲处理] 格式化后的大纲数据:', JSON.stringify(formattedOutline, null, 2));
+      console.log('[大纲处理] 格式化后的大纲长度:', formattedOutline.length);
+      
+      // 准备视频数据对象
+      const mergedVideoData = {
+        id: videoId,
+        title: videoData.title || extractedVideoInfo.filename || '未知视频',
+        // 使用格式化后的大纲数据
+        outline: formattedOutline,
+        // 视频详情数据（只包含需要的字段）
+        video: extractedVideoInfo,
+        // 视频播放URL
+        file: {
+          url: videoUrl
+        },
+        // 保留原始视频信息
+        originalData: videoData,
+        // 网络请求统计
+        requestStats: {
+          outlineRequestTime: outlineEndTime - outlineStartTime,
+          detailsRequestTime: detailsEndTime - detailsStartTime,
+          totalRequestTime: outlineEndTime - outlineStartTime + detailsEndTime - detailsStartTime
+        }
+      };
+      
+      console.log('\n[数据合并] 合并后的视频数据:', JSON.stringify(mergedVideoData, null, 2));
+      
+      // 更新状态
+      setVideoData(mergedVideoData);
+      setActiveView('outline');
+      
+      console.log('\n✅ 视频大纲和详情加载完成，切换到大纲视图');
+      console.log(`🎯 最终视频数据结构: videoData.outline 长度=${mergedVideoData.outline.length}`);
+      console.log(`🎯 视频详情结构: videoData.video = ${JSON.stringify(mergedVideoData.video, null, 2)}`);
+      console.log(`🎯 视频文件URL: ${mergedVideoData.file.url}`);
+      
+    } catch (error) {
+      console.error('\n❌ 处理视频大纲和详情时发生错误！');
+      console.error('🚨 错误对象:', error);
+      console.error('🚨 错误类型:', error.constructor.name);
+      
+      if (error.message.includes('/outline')) {
+        console.error('⚠️ 注意: 视频大纲接口错误，这可能是因为大纲数据还未生成');
+      } else if (error.message.includes(`/videos/${videoId}`)) {
+        console.error('⚠️ 注意: 视频详情接口错误，无法获取播放地址');
+      }
+      
+      // 显示错误信息但仍然尝试切换到视图
+      setAppState(prev => ({ ...prev, error: `加载视频信息失败: ${error.message}` }));
+      
+      // 即使出错也尝试切换到大纲视图，使用已有数据
+      if (videoData) {
+        setVideoData({ id: videoId, title: videoData.title || '未知视频', outline: [], originalData: videoData });
+        setActiveView('outline');
+      }
+    } finally {
+      setIsLoading(false);
+      console.log('=======================================\n');
+    }
+  };
 
   // 处理预设问题点击
   const handlePresetClick = (question) => {
