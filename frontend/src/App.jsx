@@ -109,8 +109,18 @@ function App() {
     } else if (results && Array.isArray(results.results)) {
       videosData = results.results;
       console.log('从results字段获取的视频数量:', videosData.length);
+    } else if (results && Array.isArray(results.video_info)) {
+      // 处理后端返回的video_info字段
+      videosData = results.video_info;
+      console.log('从video_info字段获取的视频数量:', videosData.length);
     } else {
       console.log('未找到有效的视频数据字段');
+    }
+    
+    // 确保videosData是数组
+    if (!Array.isArray(videosData)) {
+      console.warn('视频数据不是数组格式，重置为空数组:', videosData);
+      videosData = [];
     }
     
     // 获取消息文本
@@ -143,7 +153,7 @@ function App() {
   }
 
   // 处理视频链接点击
-  const handleVideoClick = (videoId) => {
+  const handleVideoClick = async (videoId) => {
     console.log('处理视频点击，videoId:', videoId);
     // 先从搜索结果中查找视频
     let video = searchResults.find(v => v.id === videoId);
@@ -165,11 +175,71 @@ function App() {
     // 如果找到视频，设置数据并切换视图
     if (video) {
       console.log('找到视频数据:', video);
-      setVideoData(video);
-      setActiveView('player');
+      
+      // 获取视频大纲数据
+      try {
+        setIsLoading(true);
+        console.log('正在获取视频大纲，videoId:', videoId);
+        const outlineResponse = await apiService.video.getOutline(videoId);
+        console.log('获取到的视频大纲数据:', outlineResponse);
+        
+        // 合并视频数据和大纲数据
+        if (outlineResponse && outlineResponse.outline) {
+          // 转换大纲数据格式以匹配VideoOutline组件的期望格式
+          let formattedOutline = [];
+          if (outlineResponse.outline.main_sections && Array.isArray(outlineResponse.outline.main_sections)) {
+            formattedOutline = outlineResponse.outline.main_sections.map((section, index) => ({
+              id: `section-${index + 1}`,
+              title: section.title || `第${index + 1}节`,
+              startTime: convertTimeToSeconds(section.start_time || '00:00:00'),
+              endTime: convertTimeToSeconds(section.end_time || '00:00:00'),
+              snippet: section.summary || '',
+              children: section.subsections ? section.subsections.map((subsection, subIndex) => ({
+                id: `section-${index + 1}-${subIndex + 1}`,
+                title: subsection.title || `小节${subIndex + 1}`,
+                startTime: convertTimeToSeconds(subsection.start_time || '00:00:00'),
+                endTime: convertTimeToSeconds(subsection.end_time || '00:00:00'),
+                snippet: subsection.summary || ''
+              })) : []
+            }));
+          }
+          
+          // 更新视频数据，包含格式化后的大纲
+          const updatedVideoData = {
+            ...video,
+            outline: formattedOutline
+          };
+          setVideoData(updatedVideoData);
+        }
+      } catch (error) {
+        console.error('获取视频大纲失败:', error);
+        // 如果获取大纲失败，仍然显示视频，但不包含大纲
+        setVideoData(video);
+      } finally {
+        setIsLoading(false);
+      }
+      
+      // 切换到outline视图，实现左右分栏显示
+      setActiveView('outline');
     } else {
       console.error('未找到ID为', videoId, '的视频');
     }
+  }
+  
+  // 辅助函数：将时间字符串转换为秒数
+  const convertTimeToSeconds = (timeStr) => {
+    if (!timeStr || typeof timeStr !== 'string') return 0;
+    
+    // 处理不同格式的时间字符串
+    const parts = timeStr.split(':').map(Number);
+    if (parts.length === 2) {
+      // MM:SS 格式
+      return parts[0] * 60 + parts[1];
+    } else if (parts.length === 3) {
+      // HH:MM:SS 格式
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    return 0;
   }
 
   // 处理查看大纲按钮点击
@@ -206,9 +276,11 @@ function App() {
 
   // 返回聊天界面
   const handleBackToChat = () => {
+    // 切换视图到问答界面
     setActiveView('chat')
     setCurrentQuery('')
     setAppState(prev => ({ ...prev, error: null }))
+    console.log('返回到问答界面')
   }
 
   // 清除错误
@@ -459,30 +531,58 @@ function App() {
       case 'outline':
         return (
           <div className="outline-view">
-            <div className="outline-sidebar">
-              <VideoOutline 
-                outline={videoData?.outline || []}
-                onItemClick={(startTime) => {
-                  // 处理大纲项点击，更新视频播放位置
-                  const videoElement = document.getElementById('main-video');
-                  if (videoElement) {
-                    videoElement.currentTime = startTime;
-                  }
-                }}
-                highlightSegment={videoData?.highlightSegment}
-              />
+            {/* 返回按钮 */}
+            <div className="outline-header-actions">
+              <button 
+                className="back-button"
+                onClick={handleBackToChat}
+                title="返回问答界面"
+              >
+                ← 返回问答
+              </button>
             </div>
-            <div className="video-player-container">
-              <VideoPlayer 
-                videoData={videoData}
-                autoPlay={true}
-                initialTime={videoData?.highlightSegment?.startTime || 0}
-              />
+            
+            <div className="outline-content-container">
+              <div className="outline-sidebar">
+                <VideoOutline 
+                  outline={videoData?.outline || []}
+                  onItemClick={(startTime) => {
+                    // 处理大纲项点击，更新视频播放位置
+                    const videoElement = document.getElementById('main-video');
+                    if (videoElement) {
+                      videoElement.currentTime = startTime;
+                      // 确保视频播放
+                      if (videoElement.paused) {
+                        videoElement.play();
+                      }
+                    }
+                  }}
+                  highlightSegment={videoData?.highlightSegment}
+                />
+              </div>
+              <div className="video-player-wrapper">
+                <VideoPlayer 
+                  videoData={videoData}
+                  autoPlay={true}
+                  initialTime={videoData?.highlightSegment?.startTime || 0}
+                />
+              </div>
             </div>
           </div>
         )
       default:
-        return <ChatInterface onSearch={handleSearch} onUploadClick={handleUploadStart} />
+        return (
+          <ChatInterface 
+            onSearch={handleSearch}
+            onUploadClick={handleUploadStart}
+            messages={messages}
+            isLoading={isLoading}
+            onPresetClick={handlePresetClick}
+            onVideoClick={handleVideoClick}
+            onViewOutline={handleViewOutline}
+            onResultSelect={handleResultSelect}
+          />
+        )
     }
   }
 

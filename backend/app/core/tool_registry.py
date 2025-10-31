@@ -560,8 +560,10 @@ async def search_video_by_vector_tool(query: str, top_k: int = 10) -> Dict[str, 
                 # 计算相关度百分比
                 relevance = round((1.0 / (1.0 + group["best_match_score"])) * 100, 1)
                 
-                # 构建简化的结果格式，只包含必要信息
+                # 构建简化的结果格式，包含所有必要信息，特别是id字段
                 final_results.append({
+                    "id": video.id,  # 视频ID，这是关键的字段，确保前端能获取正确的ID
+                    "video_id": video.id,  # 额外添加video_id字段作为冗余，确保兼容性
                     "link": f"/api/v1/videos/{video.id}/outline",  # 跳转到大纲详情页的连接
                     "title": video.filename,  # 视频标题
                     "similarity": relevance,  # 视频匹配相似度（百分比）

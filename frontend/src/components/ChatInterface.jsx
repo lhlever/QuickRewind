@@ -82,14 +82,21 @@ const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadCli
 
   // 格式化消息文本，处理视频链接和Markdown格式
   const formatMessage = (text, videoResults = []) => {
+    console.log('formatMessage - 接收到的videoResults:', videoResults);
+    console.log('formatMessage - videoResults类型:', typeof videoResults);
+    console.log('formatMessage - videoResults是否为数组:', Array.isArray(videoResults));
+    console.log('formatMessage - videoResults长度:', Array.isArray(videoResults) ? videoResults.length : 'N/A');
+    
     // 确保text是字符串类型
     const messageText = typeof text === 'string' ? text : String(text || '');
     
     // 确保videoResults是数组
     const validVideoResults = Array.isArray(videoResults) ? videoResults : [];
+    console.log('formatMessage - 处理后的有效视频结果数量:', validVideoResults.length);
     
     // 为视频卡片创建HTML模板
       const createVideoCard = (videoData) => {
+        console.log('createVideoCard - 接收到的视频数据:', videoData);
         try {
           // 确保videoData对象存在且为有效对象
           if (!videoData || typeof videoData !== 'object') {
@@ -103,6 +110,14 @@ const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadCli
           const relevance = Math.max(0, Math.min(100, videoData.relevance !== undefined ? videoData.relevance : (videoData.similarity || (videoData.relevance_score || 75))));
           const matchedSubtitles = videoData.matchedSubtitles || videoData.matched_subtitles || videoData.snippet || '暂无匹配内容信息';
           const thumbnail = videoData.thumbnail || '';
+          
+          console.log('createVideoCard - 处理后的视频数据:', {
+            videoId,
+            title,
+            relevance,
+            matchedSubtitles,
+            thumbnail
+          });
           
           // 创建相关性标签
           const relevanceBadge = `<div class="video-card-relevance">${relevance}%</div>`;

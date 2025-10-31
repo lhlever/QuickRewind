@@ -8,6 +8,7 @@ const VideoPlayer = forwardRef(({ video, videoData, initialTime = 0, autoPlay = 
   const [isPlaying, setIsPlaying] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [volume, setVolume] = useState(80)
+  const [isPlayPending, setIsPlayPending] = useState(false)
 
   // 转发ref到video元素
   useEffect(() => {
@@ -27,6 +28,10 @@ const VideoPlayer = forwardRef(({ video, videoData, initialTime = 0, autoPlay = 
     
     if (videoSource && videoRef.current) {
       try {
+        // 重置播放状态
+        setIsPlaying(false)
+        setIsPlayPending(false)
+        
         if (videoSource.url) {
           videoRef.current.src = videoSource.url
         } else if (videoSource instanceof File) {
@@ -47,37 +52,79 @@ const VideoPlayer = forwardRef(({ video, videoData, initialTime = 0, autoPlay = 
 
   // 处理初始时间设置和自动播放
   useEffect(() => {
-    if (videoRef.current) {
-      if (initialTime !== null && 
-          typeof initialTime === 'number' && isFinite(initialTime) && initialTime >= 0) {
+    if (videoRef.current && initialTime >= 0) {
+      // 确保视频已经加载了元数据
+      const handleLoadedMetadata = () => {
         try {
-          videoRef.current.currentTime = initialTime
-        } catch (error) {
-          console.warn('Failed to set currentTime:', error)
+          videoRef.current.currentTime = initialTime;
+          if (autoPlay) {
+            setIsPlayPending(true)
+            videoRef.current.play()
+              .then(() => {
+                setIsPlaying(true)
+                setIsPlayPending(false)
+              })
+              .catch(err => {
+                console.warn('自动播放失败:', err);
+                setIsPlaying(false)
+                setIsPlayPending(false)
+              });
+          }
+        } catch (err) {
+          console.error('设置初始时间或自动播放错误:', err)
+          setIsPlaying(false)
+          setIsPlayPending(false)
         }
-      }
+      };
       
-      if (autoPlay) {
-        videoRef.current.play().catch(err => {
-          console.warn('Auto play prevented:', err)
-        })
-        setIsPlaying(true)
+      // 如果视频已经加载了元数据，直接设置时间
+      if (videoRef.current.readyState >= 1) {
+        handleLoadedMetadata();
+      } else {
+        // 否则监听loadedmetadata事件
+        videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
+        return () => {
+          if (videoRef.current) {
+            videoRef.current.removeEventListener('loadedmetadata', handleLoadedMetadata);
+          }
+        };
       }
     }
-  }, [initialTime, autoPlay])
+  }, [initialTime, autoPlay]);
+  
+  // 当videoData更新时确保视频正确加载
+  useEffect(() => {
+    // 这个逻辑已经在上面的useEffect中处理了
+    // 这里可以添加其他针对videoData变化的处理逻辑
+  }, [videoData])
 
   // 处理播放/暂停
   const togglePlayPause = () => {
-    if (videoRef.current) {
+    if (videoRef.current && !isPlayPending) {
       try {
-        if (isPlaying) {
+        // 先检查视频的实际播放状态
+        const currentPlaying = !videoRef.current.paused;
+        
+        if (currentPlaying || isPlaying) {
           videoRef.current.pause()
+          setIsPlaying(false)
         } else {
+          setIsPlayPending(true)
           videoRef.current.play()
+            .then(() => {
+              setIsPlaying(true)
+              setIsPlayPending(false)
+            })
+            .catch(error => {
+              console.error('播放失败:', error)
+              setIsPlaying(false)
+              setIsPlayPending(false)
+            })
         }
-        setIsPlaying(!isPlaying)
       } catch (error) {
-        console.error('Play/pause error:', error)
+        console.error('播放/暂停错误:', error)
+        setIsPlaying(false)
+        setIsPlayPending(false)
       }
     }
   }
