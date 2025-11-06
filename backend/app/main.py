@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
 import logging
+import os
 from app.api import api_router
 from app.core.config import settings
 from app.core.database import engine, Base
@@ -34,6 +36,13 @@ app.add_middleware(
 
 # 添加GZip中间件
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# 配置静态文件服务，用于提供视频和HLS文件
+video_dir = os.path.abspath(settings.video_dir)
+# 确保视频目录存在
+os.makedirs(video_dir, exist_ok=True)
+# 挂载静态文件服务，使用/videos路径访问
+app.mount("/videos", StaticFiles(directory=video_dir), name="videos")
 
 # 注册路由
 app.include_router(api_router)

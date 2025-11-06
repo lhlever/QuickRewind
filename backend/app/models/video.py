@@ -28,6 +28,7 @@ class Video(Base):
     filename = Column(String, nullable=False)
     filepath = Column(String, nullable=False)
     filesize = Column(Integer, nullable=False)
+    hls_playlist = Column(String, nullable=True)  # HLS播放列表路径
     duration = Column(Float, nullable=True)
     status = Column(Enum(VideoStatus), default=VideoStatus.UPLOADING)
     

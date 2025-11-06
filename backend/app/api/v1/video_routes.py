@@ -52,7 +52,7 @@ def start_step(video_id: str, step_name: str):
         processing_info_cache[video_id]["last_updated"] = datetime.now(timezone.utc)
         
         # 更新进度（基于已完成的步骤和当前步骤）
-        total_steps = 4  # 上传、提取音频、语音识别和字幕生成、生成摘要、向量存储
+        total_steps = 5  # 视频HLS转码、提取音频、语音识别和字幕生成、生成视频大纲、向量存储
         current_step_index = len(processing_info_cache[video_id]["steps"]) - 1
         if current_step_index >= 0:
             progress = int((current_step_index + 0.5) / total_steps * 100)  # 当前步骤完成50%
@@ -72,7 +72,7 @@ def complete_step(video_id: str, step_name: str):
                     break
             
             # 更新进度
-            total_steps = 4
+            total_steps = 5
             completed_steps = sum(1 for s in processing_info_cache[video_id]["steps"] if s["status"] == "completed")
             progress = int(completed_steps / total_steps * 100)
             processing_info_cache[video_id]["progress"] = min(progress, 99)
@@ -115,7 +115,7 @@ async def upload_video(
 ) -> Dict[str, Any]:
     """上传视频文件"""
     try:
-        # 保存视频文件
+        # 保存视频文件并转换为HLS格式
         file_info = video_processor.save_uploaded_video(file.file, file.filename)
         
         # 创建视频记录
@@ -229,7 +229,14 @@ def _process_video_task(video_id: str, db: Session):
         initialize_processing_info(video_id)
         
         try:
-            # 步骤1: 提取音频
+            # 步骤1: 转换为HLS格式
+            start_step(video_id, "视频HLS转码")
+            hls_info = video_processor.convert_to_hls(video.filepath)
+            video.hls_playlist = hls_info["playlist_path"]
+            complete_step(video_id, "视频HLS转码")
+            db.commit()
+            
+            # 步骤2: 提取音频
             start_step(video_id, "提取音频")
             audio_path = video_processor.extract_audio(video.filepath)
             video.audio_path = audio_path
@@ -240,7 +247,7 @@ def _process_video_task(video_id: str, db: Session):
             video.status = VideoStatus.TRANSCRIBING
             db.commit()
             
-            # 步骤2: 语音识别并生成字幕（合并为一个步骤）
+            # 步骤3: 语音识别并生成字幕（合并为一个步骤）
             start_step(video_id, "语音识别和字幕生成")
             # 调用语音识别，同时生成并保存SRT字幕
             recognition_result = speech_recognizer.transcribe(audio_path)

@@ -7,6 +7,7 @@ import logging
 from app.core.config import settings
 import tempfile
 import shutil
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +31,17 @@ class VideoProcessor:
     def __init__(self):
         self.video_dir = settings.video_dir
         self.audio_dir = settings.audio_dir
+        self.hls_dir = os.path.join(self.video_dir, 'hls')  # HLS文件存储目录
         self._ensure_directories()
     
     def _ensure_directories(self):
         """确保必要的目录存在"""
         Path(self.video_dir).mkdir(parents=True, exist_ok=True)
         Path(self.audio_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.hls_dir).mkdir(parents=True, exist_ok=True)
     
     def save_uploaded_video(self, file_obj, filename: str) -> Dict[str, Any]:
-        """保存上传的视频文件
+        """保存上传的视频文件并转换为HLS格式
         
         Args:
             file_obj: 文件对象
@@ -86,7 +89,7 @@ class VideoProcessor:
             
             logger.info(f"视频文件已保存: {file_path}, 大小: {file_size / (1024*1024):.2f}MB")
             
-            return {
+            result = {
                 "file_path": file_path,
                 "filename": filename,
                 "unique_filename": unique_filename,
@@ -94,6 +97,8 @@ class VideoProcessor:
                 "has_torch": HAS_TORCH,
                 "has_cuda": HAS_CUDA
             }
+            
+            return result
         except Exception as e:
             logger.error(f"保存视频文件失败: {str(e)}")
             raise
@@ -295,6 +300,78 @@ class VideoProcessor:
                     logger.info(f"已删除文件: {file_path}")
             except Exception as e:
                 logger.error(f"删除文件 {file_path} 失败: {str(e)}")
+    
+    def convert_to_hls(self, video_path: str) -> Dict[str, Any]:
+        """将视频转换为HLS格式
+        
+        Args:
+            video_path: 视频文件路径
+            
+        Returns:
+            包含HLS文件信息的字典
+        """
+        try:
+            # 生成唯一的HLS目录名
+            video_basename = os.path.splitext(os.path.basename(video_path))[0]
+            # 使用正则表达式清理目录名，避免特殊字符问题
+            safe_dirname = re.sub(r'[^a-zA-Z0-9_-]', '_', video_basename)
+            hls_output_dir = os.path.join(self.hls_dir, safe_dirname)
+            
+            # 创建HLS输出目录
+            Path(hls_output_dir).mkdir(parents=True, exist_ok=True)
+            
+            # HLS播放列表路径
+            playlist_path = os.path.join(hls_output_dir, 'playlist.m3u8')
+            segment_path = os.path.join(hls_output_dir, 'segment_%03d.ts')
+            
+            # 使用ffmpeg将视频转换为HLS格式
+            # 主要参数说明：
+            # -hls_time: 每个分片的时长（秒）
+            # -hls_list_size: 播放列表中包含的最大分片数
+            # -hls_segment_filename: 分片文件名模式
+            # -hls_flags: delete_segments（删除过期分片）+ append_list（追加到播放列表）
+            # -vcodec: h264视频编码
+            # -acodec: aac音频编码
+            # -sc_threshold: 场景切换阈值（0表示禁用场景切换分割）
+            (ffmpeg
+                .input(video_path)
+                .output(playlist_path,
+                        hls_time=5,  # 减小分片间隔为5秒
+                        hls_list_size=0,  # 0表示包含所有分片
+                        hls_segment_filename=segment_path,
+                        hls_flags='delete_segments+append_list',
+                        vcodec='libx264',
+                        acodec='aac',
+                        sc_threshold=0,
+                        preset='medium',
+                        crf=23,
+                        loglevel='error')
+                .run(capture_stdout=True, capture_stderr=True))
+            
+            # 获取生成的HLS文件列表
+            hls_files = []
+            if os.path.exists(hls_output_dir):
+                hls_files = [os.path.join(hls_output_dir, f) for f in os.listdir(hls_output_dir) 
+                            if f.endswith('.ts') or f.endswith('.m3u8')]
+            
+            # 返回相对路径（从视频目录开始），便于前端访问
+            relative_playlist_path = os.path.relpath(playlist_path, self.video_dir)
+            relative_hls_files = [os.path.relpath(f, self.video_dir) for f in hls_files]
+            
+            logger.info(f"HLS转换完成，生成 {len(hls_files)} 个文件")
+            
+            return {
+                "playlist_path": relative_playlist_path,
+                "hls_files": relative_hls_files,
+                "absolute_playlist_path": playlist_path,
+                "absolute_hls_dir": hls_output_dir
+            }
+        except ffmpeg.Error as e:
+            logger.error(f"FFmpeg HLS转换错误: {e.stderr.decode()}")
+            raise
+        except Exception as e:
+            logger.error(f"HLS转换失败: {str(e)}")
+            raise
     
     def get_system_info(self) -> Dict[str, Any]:
         """获取系统信息和可用资源状态
