@@ -555,7 +555,11 @@ async def search_video_by_vector_tool(query: str, top_k: int = 10) -> Dict[str, 
         # 查询视频元数据并构建最终结果
         final_results = []
         for video_id, group in video_groups.items():
+            logger.info("+++++++++++++++++++")
+            logger.info(f"正在处理视频ID  : {video_id}")
+            logger.info("+++++++++++++++++++")
             video = db.query(Video).filter(Video.id == video_id).first()
+            logger.info(f"视频ID {video_id} 元数据: {video.__dict__}")
             if video:
                 # 计算相关度百分比
                 relevance = round((1.0 / (1.0 + group["best_match_score"])) * 100, 1)

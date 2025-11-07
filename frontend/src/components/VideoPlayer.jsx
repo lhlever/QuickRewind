@@ -1,18 +1,15 @@
 import { useRef, useEffect, useState, forwardRef } from 'react'
 import './VideoPlayer.css'
 
-// 动态导入hls.js库
-let Hls = null;
-try {
-  // 检查是否支持hls.js
-  if (typeof window !== 'undefined') {
-    // 动态导入避免SSR问题
-    const hlsModule = require('hls.js');
-    Hls = hlsModule.default || hlsModule;
-  }
-} catch (error) {
-  console.warn('hls.js库加载失败:', error);
-  Hls = null;
+// 静态导入hls.js库
+import Hls from 'hls.js';
+
+// 确保Hls存在，在不支持的环境中提供后备
+const SafeHls = typeof window !== 'undefined' ? Hls : null;
+
+// 验证Hls库是否正确加载
+if (SafeHls === null) {
+  console.warn('Hls.js库未加载，可能是在非浏览器环境中');
 }
 
 const VideoPlayer = forwardRef(({ video, videoData, initialTime = 0, autoPlay = false }, ref) => {
@@ -67,31 +64,50 @@ const VideoPlayer = forwardRef(({ video, videoData, initialTime = 0, autoPlay = 
         let finalVideoUrl = null;
         let isHlsUrl = false;
         
-        // 优先检查是否有HLS播放列表
-        if (videoData && videoData.hls_playlist) {
+        console.log('VideoPlayer: 开始检测视频URL来源');
+        console.log('VideoPlayer: 传入的videoData:', videoData ? JSON.stringify(Object.keys(videoData)) : 'null');
+        console.log('VideoPlayer: 传入的video参数:', video);
+        
+        // 1. 最高优先级：使用videoData.file.url（从App.jsx中的mergedVideoData.file.url传递）
+        if (videoData?.file?.url) {
+          finalVideoUrl = videoData.file.url;
+          isHlsUrl = finalVideoUrl.endsWith('.m3u8') || finalVideoUrl.includes('/playlist.m3u8');
+          console.log('VideoPlayer: [优先] 使用videoData.file.url:', finalVideoUrl, 'isHls:', isHlsUrl);
+        }
+        // 2. 其次检查是否有HLS播放列表
+        else if (videoData?.hls_playlist) {
           finalVideoUrl = videoData.hls_playlist;
           isHlsUrl = true;
           console.log('VideoPlayer: 使用HLS播放列表:', finalVideoUrl);
         }
-        // 其次使用videoData中的filePath字段
-        else if (videoData && videoData.filePath) {
+        // 3. 检查videoData中的filePath字段
+        else if (videoData?.filePath) {
           finalVideoUrl = videoData.filePath;
           isHlsUrl = finalVideoUrl.endsWith('.m3u8');
-          console.log('VideoPlayer: 使用videoData中的filePath:', finalVideoUrl, 'isHls:', isHlsUrl);
+          console.log('VideoPlayer: 使用videoData.filePath:', finalVideoUrl, 'isHls:', isHlsUrl);
         }
-        // 其次尝试使用videoSource.url
-        else if (videoData?.file && videoData.file.url) {
-          finalVideoUrl = videoData.file.url;
-          isHlsUrl = finalVideoUrl.endsWith('.m3u8');
-          console.log('VideoPlayer: 使用videoData.file.url:', finalVideoUrl, 'isHls:', isHlsUrl);
-        }
-        // 最后尝试直接使用video参数
-        else if (video) {
+        // 4. 检查video是否为字符串
+        else if (typeof video === 'string') {
           finalVideoUrl = video;
           isHlsUrl = finalVideoUrl.endsWith('.m3u8');
-          console.log('VideoPlayer: 使用video参数:', finalVideoUrl, 'isHls:', isHlsUrl);
-        } else {
-          console.error('VideoPlayer: 错误 - 未提供有效的视频URL');
+          console.log('VideoPlayer: 使用video字符串参数:', finalVideoUrl, 'isHls:', isHlsUrl);
+        }
+        // 5. 检查video对象是否有url属性
+        else if (video && typeof video === 'object' && video.url) {
+          finalVideoUrl = video.url;
+          isHlsUrl = finalVideoUrl.endsWith('.m3u8');
+          console.log('VideoPlayer: 使用video对象的url属性:', finalVideoUrl, 'isHls:', isHlsUrl);
+        }
+        else {
+          console.error('VideoPlayer: 错误 - 未提供有效的视频URL', {
+            videoDataKeys: videoData ? Object.keys(videoData) : 'null',
+            hasFile: !!videoData?.file,
+            hasFileUrl: !!videoData?.file?.url,
+            hasHlsPlaylist: !!videoData?.hls_playlist,
+            hasFilePath: !!videoData?.filePath,
+            videoType: typeof video,
+            videoKeys: video && typeof video === 'object' ? Object.keys(video) : 'n/a'
+          });
           finalVideoUrl = null;
         }
         
@@ -124,61 +140,103 @@ const VideoPlayer = forwardRef(({ video, videoData, initialTime = 0, autoPlay = 
           videoRef.current.addEventListener('loadeddata', handleLoadedData);
           videoRef.current.addEventListener('canplay', handleCanPlay);
           videoRef.current.addEventListener('error', handleError);
-          
+          console.log('isHlsUrl: ', isHlsUrl);
+          console.log('SafeHls: ', SafeHls);
+          console.log('SafeHls.isSupported(): ', SafeHls?.isSupported());
+
           // 处理HLS视频
-          if (isHlsUrl && Hls && Hls.isSupported()) {
+          if (isHlsUrl && SafeHls && SafeHls.isSupported()) {
             console.log('VideoPlayer: 使用HLS.js播放HLS视频');
+            setIsHlsPlayback(true);
             
-            // 创建HLS实例
-            const hls = new Hls({
-              maxBufferLength: 30,  // 最大缓冲区长度（秒）
-              maxMaxBufferLength: 60, // 最大最大缓冲区长度
-              startLevel: -1,  // 自动选择最佳质量
-              maxBufferSize: 60 * 1024 * 1024, // 最大缓冲区大小（字节）
-              highBufferWatchdogPeriod: 3, // 高缓冲监控周期（秒）
-              lowBufferWatchdogPeriod: 0.5 // 低缓冲监控周期（秒）
-            });
-            
-            // 将HLS实例附加到video元素
-            hls.attachMedia(videoRef.current);
-            
-            // 加载HLS清单
-            hls.loadSource(finalVideoUrl);
-            
-            // HLS事件监听
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
-              console.log('VideoPlayer: HLS清单解析完成');
-              setIsHlsPlayback(true);
-              if (autoPlay) {
-                videoRef.current.play().catch(err => console.error('HLS自动播放失败:', err));
-              }
-            });
-            
-            hls.on(Hls.Events.ERROR, (event, data) => {
-              console.error('VideoPlayer: HLS错误', data);
+            try {
+              // 创建HLS实例，添加调试选项
+              const hls = new SafeHls({
+                maxBufferLength: 30,
+                maxMaxBufferLength: 60,
+                startLevel: -1,
+                maxBufferSize: 60 * 1024 * 1024,
+                highBufferWatchdogPeriod: 3,
+                lowBufferWatchdogPeriod: 0.5,
+                enableWorker: true,  // 启用Web Worker处理
+                debug: true  // 启用调试日志
+              });
               
-              // 尝试恢复错误
-              if (data.fatal) {
-                switch (data.type) {
-                  case Hls.ErrorTypes.NETWORK_ERROR:
-                    console.log('VideoPlayer: 网络错误，尝试恢复');
-                    hls.startLoad();
-                    break;
-                  case Hls.ErrorTypes.MEDIA_ERROR:
-                    console.log('VideoPlayer: 媒体错误，尝试恢复');
-                    hls.recoverMediaError();
-                    break;
-                  default:
-                    console.log('VideoPlayer: 致命错误，无法恢复');
-                    hls.destroy();
-                    setIsHlsPlayback(false);
-                    break;
+              // 将HLS实例附加到video元素
+              hls.attachMedia(videoRef.current);
+              
+              // 加载HLS清单
+              console.log('VideoPlayer: 开始加载HLS清单:', finalVideoUrl);
+              hls.loadSource(finalVideoUrl);
+              
+              // HLS事件监听 - 详细记录每个阶段
+              hls.on(SafeHls.Events.MANIFEST_PARSED, (event, data) => {
+                console.log('VideoPlayer: HLS清单解析完成');
+                console.log('VideoPlayer: 可用质量等级:', data.levels.length);
+                setIsHlsPlayback(true);
+                if (autoPlay) {
+                  videoRef.current.play().catch(err => console.error('HLS自动播放失败:', err));
                 }
-              }
-            });
-            
-            // 存储HLS实例引用
-            hlsInstanceRef.current = hls;
+              });
+              
+              hls.on(SafeHls.Events.FRAG_LOADED, () => {
+                console.log('VideoPlayer: HLS片段加载成功');
+              });
+              
+              hls.on(SafeHls.Events.FRAG_LOADING, () => {
+                console.log('VideoPlayer: HLS片段加载中...');
+              });
+              
+              hls.on(SafeHls.Events.ERROR, (event, data) => {
+                console.error('VideoPlayer: HLS错误详情:', {
+                  type: data.type,
+                  details: data.details,
+                  fatal: data.fatal,
+                  url: data.url,
+                  loader: data.loader
+                });
+                
+                // 尝试恢复错误
+                if (data.fatal) {
+                  switch (data.type) {
+                    case SafeHls.ErrorTypes.NETWORK_ERROR:
+                      console.log('VideoPlayer: 网络错误，1秒后尝试恢复');
+                      setTimeout(() => hls.startLoad(), 1000); // 添加延迟重试
+                      break;
+                    case SafeHls.ErrorTypes.MEDIA_ERROR:
+                      console.log('VideoPlayer: 媒体错误，尝试恢复');
+                      hls.recoverMediaError();
+                      break;
+                    case SafeHls.ErrorTypes.MANIFEST_ERROR:
+                      console.log('VideoPlayer: 清单错误，1秒后重新加载');
+                      setTimeout(() => hls.loadSource(finalVideoUrl), 1000);
+                      break;
+                    default:
+                      console.log('VideoPlayer: 致命错误，无法恢复');
+                      hls.destroy();
+                      setIsHlsPlayback(false);
+                      // 尝试使用原生HTML5播放作为后备
+                      console.log('VideoPlayer: 尝试使用原生HTML5播放作为后备');
+                      videoRef.current.src = finalVideoUrl;
+                      videoRef.current.load();
+                      break;
+                  }
+                } else {
+                  // 非致命错误，只记录警告
+                  console.warn('VideoPlayer: HLS非致命错误:', data.details);
+                }
+              });
+              
+              // 存储HLS实例引用
+              hlsInstanceRef.current = hls;
+            } catch (error) {
+              console.error('VideoPlayer: 创建HLS实例失败:', error);
+              setIsHlsPlayback(false);
+              // 尝试使用原生HTML5播放作为后备
+              console.log('VideoPlayer: 尝试使用原生HTML5播放作为后备');
+              videoRef.current.src = finalVideoUrl;
+              videoRef.current.load();
+            }
           } else {
             // 处理非HLS视频
             console.log('VideoPlayer: 使用标准HTML5视频播放');
@@ -254,11 +312,7 @@ const VideoPlayer = forwardRef(({ video, videoData, initialTime = 0, autoPlay = 
     }
   }, [initialTime, autoPlay]);
   
-  // 当videoData更新时确保视频正确加载
-  useEffect(() => {
-    // 这个逻辑已经在上面的useEffect中处理了
-    // 这里可以添加其他针对videoData变化的处理逻辑
-  }, [videoData])
+  // 移除冗余的useEffect，因为videoData和video的变化已经在主要的useEffect中处理
 
   // 处理播放/暂停
   const togglePlayPause = () => {

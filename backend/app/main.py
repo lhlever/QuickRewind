@@ -25,15 +25,18 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# 配置CORS
+# 配置CORS - 增强版以确保静态文件服务正确处理跨域请求
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=["*"],  # 显式允许所有来源，确保静态文件服务正确处理跨域
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],  # 暴露所有响应头，确保HLS播放所需的头信息可用
 )
 
+HLS_ROOT = os.path.abspath("./data/videos/hls")
+app.mount("/videos/hls", StaticFiles(directory=HLS_ROOT), name="hls")
 # 添加GZip中间件
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 

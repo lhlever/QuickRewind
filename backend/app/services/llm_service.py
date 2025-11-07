@@ -525,7 +525,7 @@ class VolcLLMService:
                     raise  # 抛出最后一次异常而不是返回模拟向量
     
     def batch_generate_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """批量生成文本嵌入向量
+        """批量生成文本嵌入向量，每批处理100个分句
         
         Args:
             texts: 文本列表
@@ -533,29 +533,78 @@ class VolcLLMService:
         Returns:
             向量列表
         """
-        # 确保客户端已初始化，如果未初始化则使用HTTP API模式
-        if self.client is None:
-            self.client = "http_api_client"
-            logger.info("客户端未初始化，使用HTTP API模式")
+        import requests
+        import time
+        from typing import List
         
-        embeddings = []
+        # 清理空文本
+        valid_texts = [text.strip() for text in texts if text and text.strip()]
+        total_texts = len(valid_texts)
+        embeddings = [[] for _ in range(len(texts))]  # 保持原始顺序
         
-        # 处理所有文本
-        for i, text in enumerate(texts, 1):
+        logger.info(f"开始批量生成embedding，总文本数: {total_texts}")
+        
+        # 每批处理100个分句
+        batch_size = 100
+        for batch_start in range(0, total_texts, batch_size):
+            batch_end = min(batch_start + batch_size, total_texts)
+            current_batch = valid_texts[batch_start:batch_end]
+            logger.info(f"处理批次: {batch_start//batch_size + 1}, 批次大小: {len(current_batch)}/{total_texts}")
+            
             try:
-                logger.info(f"正在生成第 {i}/{len(texts)} 个文本的embedding")
-                # 正常调用API，使用HTTP API或SDK
-                embedding = self.generate_embedding(text)
-                embeddings.append(embedding)
+                # 使用ArK API进行批量embedding生成
+                headers = {
+                    "Authorization": f"Bearer {settings.volcengine_api_key}",
+                    "Content-Type": "application/json"
+                }
+                
+                data = {
+                    "encoding_format": "float",
+                    "input": current_batch,
+                    "model": "doubao-embedding-text-240715"  # 使用用户提供的模型
+                }
+                
+                url = "https://ark.cn-beijing.volces.com/api/v3/embeddings"
+                response = requests.post(url, headers=headers, json=data, timeout=60)
+                response.raise_for_status()
+                
+                result = response.json()
+                
+                # 验证响应格式
+                if "data" not in result or not isinstance(result["data"], list):
+                    raise ValueError(f"Invalid embedding response structure: {result}")
+                
+                # 提取embeddings并保持原始顺序
+                for i, item in enumerate(result["data"]):
+                    if "embedding" in item:
+                        original_index = texts.index(current_batch[i])
+                        embeddings[original_index] = item["embedding"]
+                        logger.debug(f"成功生成embedding，维度: {len(item['embedding'])}")
+                
+                # 记录使用量信息（如果有）
+                if "usage" in result:
+                    logger.info(f"批次使用信息: {result['usage']}")
                 
                 # 添加短暂延迟避免API限流
-                time.sleep(0.1)
-                
+                if batch_end < total_texts:
+                    logger.info(f"批次 {batch_start//batch_size + 1} 完成，等待1秒继续下一批次")
+                    time.sleep(1)
+                    
+            except requests.exceptions.RequestException as e:
+                logger.error(f"API请求失败 (批次 {batch_start//batch_size + 1}): {str(e)}")
+                raise
             except Exception as e:
-                logger.error(f"生成第 {i} 个文本的embedding失败: {str(e)}")
-                raise  # 抛出异常而不是使用模拟向量
+                logger.error(f"批量生成embedding失败 (批次 {batch_start//batch_size + 1}): {str(e)}")
+                raise
         
-        logger.info(f"批量embedding生成完成，共处理 {len(embeddings)}/{len(texts)} 个文本")
+        # 处理空文本，生成零向量
+        for i in range(len(embeddings)):
+            if not embeddings[i]:
+                # 生成与模型维度相匹配的零向量
+                embeddings[i] = [0.0] * settings.milvus_dim
+                logger.warning(f"为索引 {i} 的空文本生成零向量")
+        
+        logger.info(f"批量embedding生成完成，共处理 {total_texts}/{len(texts)} 个有效文本")
         return embeddings
     
     def analyze_video_content(self, transcript: str) -> Dict[str, Any]:
