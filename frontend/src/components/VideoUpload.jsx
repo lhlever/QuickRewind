@@ -146,19 +146,29 @@ const VideoUpload = ({ onVideoAnalyzed }) => {
         stopStatusPolling();
         // 获取视频详情和大纲
         try {
+          console.log(`开始获取视频详情和大纲，videoId: ${id}`);
           const [videoDetails, videoOutline] = await Promise.all([
             apiService.video.getDetails(id),
             apiService.video.getOutline(id)
           ]);
+          console.log('获取到的视频详情:', videoDetails);
+          console.log('获取到的视频大纲:', videoOutline);
           
           if (onVideoAnalyzed) {
+            // 构建与搜索结果一致的数据格式，以便App组件可以正确处理跳转到详情页
             onVideoAnalyzed({
-              id: videoDetails.id,
+              // 优先使用原始的id参数，确保视频ID一定存在
+              id: id, // 使用传入的原始id参数
+              video_id: id, // 使用传入的原始id参数作为video_id
+              // 同时保留从videoDetails获取的字段，确保数据完整性
               title: videoDetails.title || selectedFile?.name,
               duration: videoDetails.duration,
               outline: videoOutline,
               thumbnail: videoDetails.thumbnail_url || (selectedFile ? URL.createObjectURL(selectedFile) : null),
-              file: selectedFile // 保留原文件引用以便本地播放
+              file: selectedFile, // 保留原文件引用以便本地播放
+              filename: videoDetails.filename || selectedFile?.name,
+              // 保留原始的videoDetails对象，便于调试和后续处理
+              originalDetails: videoDetails
             });
           }
           

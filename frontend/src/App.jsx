@@ -218,10 +218,17 @@ function App() {
   // 处理查看视频大纲
   const handleViewOutline = async (videoData) => {
     console.log('\n=======================================');
-    console.log('[用户操作] 点击视频卡片，开始处理视频大纲和详情...');
+    console.log('[用户操作] 点击视频卡片或上传完成，开始处理视频大纲和详情...');
     console.log('[输入数据] videoData:', JSON.stringify(videoData, null, 2));
     
-    const videoId = videoData.id || videoData.video_id;
+    // 详细检查videoData中的各个可能包含ID的字段
+    console.log('[ID检查] videoData.id:', videoData.id);
+    console.log('[ID检查] videoData.video_id:', videoData.video_id);
+    console.log('[ID检查] videoData._id:', videoData._id);
+    
+    const videoId = videoData.id || videoData.video_id || videoData._id;
+    console.log('[最终ID] 确定的videoId:', videoId);
+    
     if (!videoId) {
       console.error('❌ 视频ID不存在，无法获取大纲');
       setAppState(prev => ({ ...prev, error: '视频ID错误，无法加载大纲' }));
@@ -388,8 +395,30 @@ function App() {
 
   // 处理视频上传完成后的回调
   const handleVideoAnalyzed = (data) => {
-    setVideoData(data)
-    setActiveView('player')
+    console.log('视频上传分析完成，准备跳转到详情页:', data);
+    
+    // 检查数据中是否包含有效的视频ID
+    const videoId = data.id || data.video_id;
+    if (!videoId) {
+      console.error('警告: 上传的视频数据中没有有效的视频ID');
+      setAppState(prev => ({ 
+        ...prev, 
+        isProcessing: false,
+        error: '视频上传成功，但无法获取视频详情。请稍后刷新页面重试。'
+      }));
+      // 即使没有有效的ID，也设置一些基本数据以便用户可以查看
+      setVideoData({
+        id: 'temp-' + Date.now(), // 创建临时ID
+        title: data.title || '未命名视频',
+        outline: data.outline || [],
+        file: data.file
+      });
+      setActiveView('player'); // 切换到播放器视图而不是大纲视图
+      return;
+    }
+    
+    // 只有在有有效ID的情况下才调用handleViewOutline
+    handleViewOutline(data);
     setAppState(prev => ({ ...prev, isProcessing: false }))
   }
 
