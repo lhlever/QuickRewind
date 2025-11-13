@@ -22,16 +22,27 @@ const ChatLayout = ({
   // 处理视频点击
   const handleVideoClick = (video) => {
     console.log('点击视频:', video);
-    setActiveVideoId(video.id);
+    console.log('视频对象类型:', typeof video);
+    console.log('视频对象的所有属性:', Object.keys(video));
+    console.log('视频ID:', video.id);
+    console.log('视频_id:', video.video_id);
+    console.log('视频_id:', video._id);
     
-    // 如果有传入的onVideoClick回调，调用它
-    if (onVideoClick) {
-      onVideoClick(video.id);
+    // 确定视频ID
+    const videoId = video.id || video.video_id || video._id;
+    console.log('最终确定的视频ID:', videoId);
+    
+    if (videoId) {
+      setActiveVideoId(videoId);
     }
     
-    // 如果有传入的onViewOutline回调，调用它（用于跳转到详情页）
+    // 优先使用onViewOutline回调，因为它包含完整的大纲和播放功能
     if (onViewOutline) {
+      console.log('调用onViewOutline，传入完整的视频对象');
       onViewOutline(video);
+    } else if (onVideoClick) {
+      console.log('调用onVideoClick，传入视频ID');
+      onVideoClick(videoId);
     }
   };
 

@@ -17,6 +17,25 @@ const VideoList = ({ onVideoClick, onViewDetail, activeVideoId }) => {
         const videoList = await apiService.video.getUserVideos();
         console.log('获取到的用户视频列表:', videoList);
         
+        // 添加更详细的调试日志
+        if (videoList && videoList.length > 0) {
+          console.log('视频列表类型:', typeof videoList);
+          console.log('视频列表是否为数组:', Array.isArray(videoList));
+          console.log('第一个视频对象结构:', JSON.stringify(videoList[0], null, 2));
+          console.log('第一个视频的所有属性:', Object.keys(videoList[0]));
+          console.log('第一个视频的ID字段:', videoList[0].id, videoList[0]._id, videoList[0].video_id);
+          
+          // 遍历所有视频，检查ID字段
+          videoList.forEach((video, index) => {
+            console.log(`视频${index + 1}的ID字段:`, {
+              id: video.id,
+              _id: video._id,
+              video_id: video.video_id,
+              title: video.title
+            });
+          });
+        }
+        
         setVideos(videoList);
       } catch (err) {
         console.error('加载用户视频列表失败:', err);
@@ -116,8 +135,10 @@ const VideoList = ({ onVideoClick, onViewDetail, activeVideoId }) => {
           <div className="video-items">
             {videos.map((video) => (
               <div
-                key={video.id}
-                className={`video-item ${activeVideoId === video.id ? 'active' : ''}`}
+                key={video.id || video._id || video.video_id}
+                className={`video-item ${activeVideoId === (video.id || video._id || video.video_id) ? 'active' : ''}`}
+                onClick={() => onVideoClick(video)}
+                title="点击查看视频"
               >
                 <div className="video-thumbnail">
                   <div className="video-icon">🎬</div>
@@ -141,37 +162,6 @@ const VideoList = ({ onVideoClick, onViewDetail, activeVideoId }) => {
                       <span className="meta-label">上传:</span>
                       <span className="meta-value">{formatDate(video.created_at)}</span>
                     </div>
-                  </div>
-                  
-                  <div className="video-status">
-                    <span className={`status-badge status-${video.status}`}>
-                      {video.status === 'completed' ? '已完成' : video.status}
-                    </span>
-                  </div>
-                  
-                  <div className="video-actions">
-                    <button 
-                      className="action-btn view-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onVideoClick(video);
-                      }}
-                      title="查看视频"
-                    >
-                      查看
-                    </button>
-                    <button 
-                      className="action-btn detail-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onViewDetail) {
-                          onViewDetail(video);
-                        }
-                      }}
-                      title="查看详情"
-                    >
-                      详情
-                    </button>
                   </div>
                 </div>
               </div>
