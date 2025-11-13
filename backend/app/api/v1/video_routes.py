@@ -113,16 +113,18 @@ router = APIRouter(prefix="/videos", tags=["videos"])
 async def upload_video(
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = BackgroundTasks(),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """上传视频文件"""
     try:
         # 保存视频文件并转换为HLS格式
         file_info = video_processor.save_uploaded_video(file.file, file.filename)
         
-        # 创建视频记录
+        # 创建视频记录，关联到当前用户
         video = Video(
             id=str(uuid.uuid4()),  # 转换为字符串以匹配数据库类型
+            user_id=current_user.id,  # 设置用户ID，关联到当前用户
             filename=file_info["filename"],
             filepath=file_info["file_path"],
             filesize=file_info["file_size"],

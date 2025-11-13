@@ -192,6 +192,13 @@ export const apiService = {
         });
         
         xhr.open('POST', `${API_BASE_URL}/v1/videos/upload`);
+        
+        // 添加认证token到请求头
+        const token = localStorage.getItem('token');
+        if (token) {
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        }
+        
         xhr.send(formData);
       });
     },
