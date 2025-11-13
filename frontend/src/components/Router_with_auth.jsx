@@ -6,7 +6,7 @@ import VideoUpload from './VideoUpload';
 import VideoPlayer from './VideoPlayer';
 import SearchResults from './SearchResults';
 import VideoOutline from './VideoOutline';
-import UserManagement from './UserManagement';
+
 import { apiService } from '../services/api';
 
 const RouterWithAuth = () => {
@@ -589,28 +589,6 @@ const RouterWithAuth = () => {
   // 渲染内容区域
   const renderContent = () => {
     switch (activeView) {
-      case 'test':
-        return (
-          <div className="test-page">
-            <h1>认证测试页面</h1>
-            {user ? (
-              <div>
-                <h2>欢迎, {user.username}!</h2>
-                <p>邮箱: {user.email}</p>
-                <p>用户ID: {user.id}</p>
-                <button onClick={() => {
-                  localStorage.removeItem('token');
-                  window.location.reload();
-                }}>登出</button>
-              </div>
-            ) : (
-              <div>
-                <h2>未登录</h2>
-                <p>请先登录</p>
-              </div>
-            )}
-          </div>
-        )
       case 'chat':
         console.log('渲染ChatInterface组件，消息数据:', messages); // 添加调试信息
         return (
@@ -686,8 +664,7 @@ const RouterWithAuth = () => {
             </div>
           </div>
         )
-      case 'userManagement':
-        return <UserManagement onBack={() => setActiveView('chat')} />
+
       default:
         return (
           <ChatInterface 
@@ -747,34 +724,6 @@ const RouterWithAuth = () => {
             onClick={handleUploadStart}
           >
             上传视频
-          </button>
-          <button 
-            className="nav-button test-btn"
-            onClick={() => setActiveView('test')}
-          >
-            测试认证
-          </button>
-          <button 
-            className={`nav-button user-management-btn ${activeView === 'userManagement' ? 'active' : ''}`}
-            onClick={() => setActiveView('userManagement')}
-          >
-            用户管理
-          </button>
-          <button 
-            className="nav-button profile-btn"
-            onClick={() => navigate('/profile')}
-          >
-            个人资料
-          </button>
-          <button 
-            className="nav-button logout-btn"
-            onClick={() => {
-              // 这里应该调用登出函数
-              localStorage.removeItem('token');
-              window.location.reload();
-            }}
-          >
-            登出
           </button>
         </nav>
         
