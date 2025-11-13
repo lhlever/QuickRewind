@@ -1,0 +1,130 @@
+.chat-layout {
+  display: flex;
+  height: 100vh;
+  background: #f8f9fa;
+}
+
+.chat-layout-sidebar {
+  flex-shrink: 0;
+  height: 100%;
+  background: #fff;
+  border-right: 1px solid #e0e0e0;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
+  z-index: 10;
+}
+
+.chat-layout-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: #fff;
+}
+
+.chat-layout-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  z-index: 5;
+}
+
+.toggle-video-list-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #666;
+  transition: all 0.2s ease;
+  margin-right: 16px;
+}
+
+.toggle-video-list-btn:hover {
+  border-color: #007bff;
+  color: #007bff;
+  background: #f8f9fa;
+}
+
+.chat-layout-title {
+  flex: 1;
+}
+
+.chat-layout-title h2 {
+  margin: 0 0 4px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.chat-layout-title p {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.chat-layout-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .chat-layout {
+    flex-direction: column;
+  }
+  
+  .chat-layout-sidebar {
+    width: 100%;
+    height: 200px;
+    border-right: none;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  
+  .chat-layout-main {
+    height: calc(100vh - 200px);
+  }
+  
+  .toggle-video-list-btn {
+    margin-right: 12px;
+  }
+  
+  .chat-layout-title h2 {
+    font-size: 18px;
+  }
+  
+  .chat-layout-title p {
+    font-size: 13px;
+  }
+}
+
+/* 小屏幕设备 */
+@media (max-width: 480px) {
+  .chat-layout-toolbar {
+    padding: 10px 16px;
+  }
+  
+  .toggle-video-list-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+    margin-right: 12px;
+  }
+  
+  .chat-layout-title h2 {
+    font-size: 16px;
+  }
+  
+  .chat-layout-title p {
+    font-size: 12px;
+  }
+}

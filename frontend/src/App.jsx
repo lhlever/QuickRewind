@@ -801,24 +801,7 @@ function App() {
 
       {/* 底部区域：聊天输入框和页脚 */}
       <div className="app-bottom-container">
-        {/* 预设问题区域 */}
-        {activeView === 'chat' && (
-          <div className="preset-questions">
-            <span className="preset-label">快速提问:</span>
-            <div className="preset-buttons">
-              {presetQuestions.map((question, index) => (
-                <button
-                  key={index}
-                  className="preset-button"
-                  onClick={() => handlePresetClick(question)}
-                  disabled={isLoading}
-                >
-                  {question}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* 预设问题区域 - 已取消 */}
         
         {/* 聊天输入容器 */}
         {activeView === 'chat' && (

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import AuthPage from './AuthPage';
 import { useAuth } from '../contexts/AuthContext';
+import ChatLayout from './ChatLayout';
 import ChatInterface from './ChatInterface';
 import VideoUpload from './VideoUpload';
 import VideoPlayer from './VideoPlayer';
 import SearchResults from './SearchResults';
 import VideoOutline from './VideoOutline';
+import VideoDetail from './VideoDetail';
 
 import { apiService } from '../services/api';
 
@@ -21,7 +23,7 @@ const RouterWithAuth = () => {
     '总结一下这个视频的主要内容'
   ]
   
-  const [activeView, setActiveView] = useState('chat') // 'chat', 'upload', 'player', 'search', 'outline'
+  const [activeView, setActiveView] = useState('chat') // 'chat', 'upload', 'player', 'search', 'outline', 'detail'
   const [searchResults, setSearchResults] = useState([])
   const [videoData, setVideoData] = useState(null)
   const [currentQuery, setCurrentQuery] = useState('')
@@ -407,6 +409,49 @@ const RouterWithAuth = () => {
     }
   };
 
+  // 处理查看视频详情
+  const handleViewDetail = async (videoData) => {
+    console.log('处理查看视频详情，videoData:', videoData);
+    
+    const videoId = videoData.id || videoData.video_id || videoData._id;
+    if (!videoId) {
+      console.error('视频ID不存在，无法查看详情');
+      setAppState(prev => ({ ...prev, error: '视频ID错误，无法加载详情' }));
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      // 获取视频详情数据
+      const videoDetailsData = await apiService.video.getDetails(videoId);
+      console.log('获取到的视频详情数据:', videoDetailsData);
+      
+      // 获取视频大纲数据
+      const outlineData = await apiService.video.getOutline(videoId);
+      console.log('获取到的视频大纲数据:', outlineData);
+      
+      // 构建完整的视频数据对象
+      const completeVideoData = {
+        id: videoId,
+        ...videoDetailsData,
+        outline: outlineData?.outline || null
+      };
+      
+      console.log('完整的视频数据对象:', completeVideoData);
+      
+      // 设置视频数据并切换到详情视图
+      setVideoData(completeVideoData);
+      setActiveView('detail');
+      
+    } catch (error) {
+      console.error('处理视频详情时出错:', error);
+      setAppState(prev => ({ ...prev, error: `加载视频详情失败: ${error.message}` }));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // 处理预设问题点击
   const handlePresetClick = (question) => {
     setInputValue(question)
@@ -590,9 +635,9 @@ const RouterWithAuth = () => {
   const renderContent = () => {
     switch (activeView) {
       case 'chat':
-        console.log('渲染ChatInterface组件，消息数据:', messages); // 添加调试信息
+        console.log('渲染ChatLayout组件，消息数据:', messages); // 添加调试信息
         return (
-          <ChatInterface 
+          <ChatLayout 
             onSearch={handleSearch}
             onUploadClick={handleUploadStart}
             messages={messages}
@@ -600,6 +645,7 @@ const RouterWithAuth = () => {
             onPresetClick={handlePresetClick}
             onVideoClick={handleVideoClick}
             onViewOutline={handleViewOutline}
+            onViewDetail={handleViewDetail}
             onResultSelect={handleResultSelect}
           />
         )
@@ -665,9 +711,17 @@ const RouterWithAuth = () => {
           </div>
         )
 
+      case 'detail':
+        return (
+          <VideoDetail 
+            videoId={videoData?.id}
+            onBack={handleBackToChat}
+          />
+        )
+
       default:
         return (
-          <ChatInterface 
+          <ChatLayout 
             onSearch={handleSearch}
             onUploadClick={handleUploadStart}
             messages={messages}
@@ -675,6 +729,7 @@ const RouterWithAuth = () => {
             onPresetClick={handlePresetClick}
             onVideoClick={handleVideoClick}
             onViewOutline={handleViewOutline}
+            onViewDetail={handleViewDetail}
             onResultSelect={handleResultSelect}
           />
         )
@@ -755,24 +810,7 @@ const RouterWithAuth = () => {
 
       {/* 底部区域：聊天输入框和页脚 */}
       <div className="app-bottom-container">
-        {/* 预设问题区域 */}
-        {activeView === 'chat' && (
-          <div className="preset-questions">
-            <span className="preset-label">快速提问:</span>
-            <div className="preset-buttons">
-              {presetQuestions.map((question, index) => (
-                <button
-                  key={index}
-                  className="preset-button"
-                  onClick={() => handlePresetClick(question)}
-                  disabled={isLoading}
-                >
-                  {question}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* 预设问题区域 - 已取消 */}
         
         {/* 聊天输入容器 */}
         {activeView === 'chat' && (

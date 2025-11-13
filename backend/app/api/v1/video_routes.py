@@ -16,6 +16,8 @@ from app.services.llm_service import llm_service
 from app.core.database import get_db, SessionLocal
 from app.core.mcp import mcp_server
 from app.models.video import Video, VideoStatus, VideoOutline
+from app.core.auth import get_current_user
+from app.models.user import User
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 import time
@@ -896,5 +898,44 @@ async def search_videos(
             "matched_videos": []
         }
         return error_response
+
+
+@router.get("/user/videos", response_model=List[Dict[str, Any]])
+async def get_user_videos(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100)
+) -> List[Dict[str, Any]]:
+    """获取当前用户上传的视频列表"""
+    try:
+        # 查询当前用户的所有视频，按创建时间倒序排列
+        videos = db.query(Video).filter(
+            Video.user_id == current_user.id,
+            Video.status == VideoStatus.COMPLETED
+        ).order_by(Video.created_at.desc()).offset(skip).limit(limit).all()
+        
+        # 格式化返回数据
+        video_list = []
+        for video in videos:
+            video_data = {
+                "id": str(video.id),
+                "title": video.filename,
+                "filename": video.filename,
+                "duration": video.duration,
+                "file_size": video.filesize,
+                "status": video.status.value,
+                "created_at": video.created_at.isoformat() if video.created_at else None,
+                "completed_at": video.completed_at.isoformat() if video.completed_at else None,
+                "hls_url": f"/videos/hls/{os.path.basename(os.path.dirname(video.hls_playlist))}/playlist.m3u8" if video.hls_playlist else None
+            }
+            video_list.append(video_data)
+        
+        logger.info(f"成功获取用户 {current_user.username} 的视频列表，共 {len(video_list)} 个视频")
+        return video_list
+        
+    except Exception as e:
+        logger.error(f"获取用户视频列表失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取视频列表失败")
 
 

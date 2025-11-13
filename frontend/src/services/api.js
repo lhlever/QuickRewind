@@ -204,6 +204,16 @@ export const apiService = {
     
     // 获取视频处理状态
     getStatus: (videoId) => request(`/v1/videos/${videoId}/status`),
+    
+    // 获取用户视频列表
+    getUserVideos: (skip = 0, limit = 20) => {
+      const token = localStorage.getItem('token');
+      return request(`/v1/videos/user/videos?skip=${skip}&limit=${limit}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    },
   },
   
   // Agent相关API
