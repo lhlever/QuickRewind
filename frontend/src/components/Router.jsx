@@ -95,9 +95,7 @@ const Router = () => {
         )}
       </main>
       
-      <footer className="app-footer">
-        <p>&copy; 2023 QuickRewind. All rights reserved.</p>
-      </footer>
+      {/* app-footer已移除 */}
     </div>
   );
 };

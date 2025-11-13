@@ -812,42 +812,11 @@ const RouterWithAuth = () => {
       <div className="app-bottom-container">
         {/* 预设问题区域 - 已取消 */}
         
-        {/* 聊天输入容器 */}
-        {activeView === 'chat' && (
-          <div className="chat-input-container">
-            <textarea
-              className="chat-input"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="输入您的问题..."
-              rows="2"
-              disabled={isLoading}
-            />
-            <button 
-              className="send-button"
-              onClick={handleSend}
-              disabled={!inputValue.trim() || isLoading}
-            >
-              {isLoading ? '发送中...' : '发送'}
-            </button>
-          </div>
-        )}
-
-        {/* 底部状态栏 */}
-        <footer className="app-footer">
-          <div className="footer-info" style={{ 
-            margin: 0, 
-            padding: 0 
-          }}>
-            <div className="status-indicator">
-              <span className={appState.isProcessing ? 'processing' : ''}></span>
-              <span>{appState.isProcessing ? '处理中...' : '就绪'}</span>
-            </div>
-          </div>
-          <div className="copyright">© 2024 QuickRewind</div>
-        </footer>
+        {/* 聊天输入容器 - 已移除 */}
       </div>
+
+      {/* 底部状态栏 - 已移除 */}
+      {/* app-footer已移除 */}
     </div>
   );
 };

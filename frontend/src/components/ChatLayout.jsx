@@ -11,7 +11,10 @@ const ChatLayout = ({
   onPresetClick, 
   onVideoClick, 
   onViewOutline,
-  onViewDetail 
+  onViewDetail,
+  inputValue,
+  onInputChange,
+  onSend
 }) => {
   const [activeVideoId, setActiveVideoId] = useState(null);
   const [isVideoListVisible, setIsVideoListVisible] = useState(true);
@@ -78,6 +81,9 @@ const ChatLayout = ({
             onPresetClick={onPresetClick}
             onVideoClick={onVideoClick}
             onViewOutline={onViewOutline}
+            inputValue={inputValue}
+            onInputChange={onInputChange}
+            onSend={onSend}
           />
         </div>
       </div>

@@ -1,9 +1,25 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import './ChatInterface.css'
 
-const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadClick, onPresetClick, onVideoClick, onViewOutline }) => {
+const ChatInterface = ({ 
+  onSearch, 
+  messages = [], 
+  isLoading = false, 
+  onUploadClick, 
+  onPresetClick, 
+  onVideoClick, 
+  onViewOutline,
+  inputValue: externalInputValue,
+  onInputChange,
+  onSend
+}) => {
   const chatContainerRef = useRef(null)
   const lastMessageRef = useRef(null)
+  const [internalInputValue, setInternalInputValue] = useState('')
+  
+  // 支持受控和非受控模式
+  const inputValue = externalInputValue !== undefined ? externalInputValue : internalInputValue
+  const setInputValue = onInputChange || setInternalInputValue
 
   // 直接滚动到底部的函数
   const scrollToBottom = () => {
@@ -53,6 +69,30 @@ const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadCli
   const handlePresetClick = (question) => {
     if (onPresetClick) {
       onPresetClick(question)
+    }
+  }
+
+  // 处理输入框变化
+  const handleInputChange = (e) => {
+    setInputValue(e.target.value)
+  }
+
+  // 处理发送消息
+  const handleSendMessage = () => {
+    if (inputValue.trim() && !isLoading) {
+      if (onSend) {
+        onSend(inputValue.trim())
+      } else if (onSearch) {
+        onSearch(inputValue.trim())
+      }
+    }
+  }
+
+  // 处理Enter键发送
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage()
     }
   }
 
@@ -286,6 +326,28 @@ const ChatInterface = ({ onSearch, messages = [], isLoading = false, onUploadCli
             <span>正在生成回复...</span>
           </div>
         )}
+      </div>
+
+      {/* 输入框区域 */}
+      <div className="chat-input-area">
+        <div className="input-container">
+          <textarea
+            className="chat-input"
+            value={inputValue}
+            onChange={handleInputChange}
+            onKeyPress={handleKeyPress}
+            placeholder="输入您的问题..."
+            rows="1"
+            disabled={isLoading}
+          />
+          <button 
+            className="send-button"
+            onClick={handleSendMessage}
+            disabled={!inputValue.trim() || isLoading}
+          >
+            {isLoading ? '发送中...' : '发送'}
+          </button>
+        </div>
       </div>
 
     </div>

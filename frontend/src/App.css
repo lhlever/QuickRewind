@@ -254,14 +254,7 @@ html, body {
   cursor: not-allowed;
 }
 
-/* 聊天输入容器样式 */
-.chat-input-container {
-  display: flex;
-  gap: var(--space-md);
-  padding: var(--space-md) var(--space-lg);
-  border-bottom: 1px solid var(--border-color);
-  background-color: var(--bg-color);
-}
+/* 聊天输入容器样式 - 已移除 */
 
 .chat-input {
   flex: 1;
@@ -300,20 +293,7 @@ html, body {
   cursor: not-allowed;
 }
 
-/* 页脚样式 */
-.app-footer {
-  background-color: var(--bg-color);
-  padding: var(--space-sm) var(--space-lg);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  min-height: 50px;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  flex-shrink: 0;
-  margin: 0;
-  border-top: none;
-}
+
 
 .footer-info {
   color: var(--text-secondary);
@@ -626,13 +606,7 @@ html, body {
     flex: 1;
   }
   
-  .app-footer {
-    padding: calc(var(--space-xs, 8px) * 0.6) calc(var(--space-xs, 8px) * 1);
-    flex-direction: column;
-    gap: calc(var(--space-xs, 8px) * 0.3);
-    text-align: center;
-    min-height: auto;
-  }
+  /* app-footer样式 - 已移除 */
 }
 
 /* 顶部导航栏 - 移除重复定义 */
@@ -779,12 +753,15 @@ html, body {
   gap: var(--space-sm);
   min-height: 0;
   width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* 确保所有直接子组件都能适应容器宽度 */
 .content-container > * {
   width: 100%;
   min-height: 0;
+  height: 100%;
 }
 
 /* 聊天布局 - 响应式设计 */
@@ -838,54 +815,7 @@ html, body {
   border: 1px solid #f3f4f6;
 }
 
-/* 聊天输入区域 */
-.chat-input-area {
-  padding: calc(var(--space-xs, 8px) * 0.6);
-  border-top: 1px solid var(--border-color);
-  display: flex;
-  gap: calc(var(--space-xs, 8px) * 0.4);
-  background-color: var(--card-bg);
-}
-
-/* 聊天输入框 */
-.chat-input {
-  flex: 1;
-  padding: calc(var(--space-xs, 8px) * 0.7);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  resize: none;
-  min-height: 32px;
-  max-height: 96px;
-  transition: border-color 0.2s ease;
-  background-color: var(--bg-color);
-}
-
-.chat-input:focus {
-  outline: none;
-  border-color: var(--primary-color);
-}
-
-/* 发送按钮 */
-.send-button {
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: calc(var(--space-xs, 8px) * 0.7) calc(var(--space-sm, 12px) * 1.1);
-  font-size: 11px;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.send-button:hover {
-  background-color: var(--primary-hover);
-}
-
-.send-button:disabled {
-  background-color: var(--text-muted);
-  cursor: not-allowed;
-}
+/* 聊天布局样式已在ChatLayout.css和ChatInterface.css中定义 */
 
 /* 搜索结果组件样式 */
 .search-results {
@@ -933,14 +863,14 @@ html, body {
   box-shadow: var(--shadow-sm);
   overflow: hidden;
   padding: 0; /* 移除内边距，使容器紧贴 */
-}
-
+  height: 100%;
 .video-section {
   padding: calc(var(--space-xs, 8px) * 0.8);
   background-color: var(--card-bg);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   height: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -1260,13 +1190,7 @@ html, body {
     padding: var(--space-sm);
   }
   
-  .app-footer {
-    padding: var(--space-xs) var(--space-sm);
-    flex-direction: column;
-    height: auto;
-    gap: var(--space-xs);
-    text-align: center;
-  }
+  /* app-footer样式已移除 */
   
   .video-placeholder {
     padding: var(--space-md) var(--space-sm);
@@ -1329,8 +1253,5 @@ html, body {
     padding: var(--space-xs);
   }
   
-  .app-footer {
-    padding: var(--space-xs);
-    font-size: 10px;
-  }
-}}}
+  /* app-footer样式已移除 */
+}}}}

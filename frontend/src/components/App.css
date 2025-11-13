@@ -91,15 +91,8 @@ body {
   width: 100%;
 }
 
-/* 应用底部 */
-.app-footer {
-  background-color: #fff;
-  border-top: 1px solid #eee;
-  padding: 16px;
-  text-align: center;
-  color: #777;
-  font-size: 14px;
-}
+/* 应用底部 - 已移除 */
+/* app-footer样式已移除 */
 
 /* 仪表盘样式 */
 .dashboard, .videos, .profile {
