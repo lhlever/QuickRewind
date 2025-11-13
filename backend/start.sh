@@ -5,7 +5,7 @@
 echo "Starting QuickRewind Backend Service..."
 
 # 检查Python环境
-if ! command -v python3 &> /dev/null; then
+if ! command -v python &> /dev/null; then
     echo "Error: Python3 is not installed."
     exit 1
 fi
@@ -13,7 +13,7 @@ fi
 # 创建虚拟环境（如果不存在）
 if [ ! -d "venv" ]; then
     echo "Creating virtual environment..."
-    python3 -m venv venv
+    python -m venv venv
     if [ $? -ne 0 ]; then
         echo "Error: Failed to create virtual environment."
         exit 1

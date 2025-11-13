@@ -382,7 +382,7 @@ async def get_available_tools_tool() -> Dict[str, Any]:
     """
     tools = mcp_server.get_available_tools()
     # 转换为可序列化的格式
-    tools_dict = [tool.dict() for tool in tools]
+    tools_dict = [tool.model_dump() for tool in tools]
     return {"tools": tools_dict}
 
 

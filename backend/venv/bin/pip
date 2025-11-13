@@ -1,5 +1,5 @@
 #!/bin/sh
-'''exec' "/Users/liuhailu/Documents/需求folder/视频 AI/QuickRewind/backend/venv/bin/python3" "$0" "$@"
+'''exec' "/Users/liuhailu/Documents/需求folder/视频 AI/QuickRewind/backend/venv/bin/python" "$0" "$@"
 ' '''
 # -*- coding: utf-8 -*-
 import re

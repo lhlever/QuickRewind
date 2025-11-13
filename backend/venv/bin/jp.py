@@ -1,4 +1,4 @@
-#!/Users/liuhailu/Documents/需求folder/视频 AI/QuickRewind/backend/venv/bin/python3
+#!/Users/liuhailu/Documents/需求folder/视频 AI/QuickRewind/backend/venv/bin/python
 
 import sys
 import json

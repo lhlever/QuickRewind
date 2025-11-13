@@ -220,6 +220,89 @@ export const apiService = {
       body: JSON.stringify({ video_id: videoId, question }),
     }),
   },
+  
+  // 用户管理相关API
+  user: {
+    // 获取用户列表
+    getUsers: (params = '') => {
+      // 从localStorage获取token
+      const token = localStorage.getItem('token');
+      return request(`/v1/users${params}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    },
+    
+    // 获取用户详情
+    getUser: (userId) => {
+      const token = localStorage.getItem('token');
+      return request(`/v1/users/${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    },
+    
+    // 创建用户
+    createUser: (userData) => {
+      const token = localStorage.getItem('token');
+      return request('/v1/users/', {
+        method: 'POST',
+        body: JSON.stringify(userData),
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    },
+    
+    // 更新用户
+    updateUser: (userId, userData) => {
+      const token = localStorage.getItem('token');
+      return request(`/v1/users/${userId}`, {
+        method: 'PUT',
+        body: JSON.stringify(userData),
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    },
+    
+    // 删除用户
+    deleteUser: (userId) => {
+      const token = localStorage.getItem('token');
+      return request(`/v1/users/${userId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    },
+    
+    // 切换用户状态
+    toggleUserStatus: (userId, isActive) => {
+      const token = localStorage.getItem('token');
+      return request(`/v1/users/${userId}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ is_active: isActive }),
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    },
+    
+    // 切换用户角色
+    toggleUserRole: (userId, isAdmin) => {
+      const token = localStorage.getItem('token');
+      return request(`/v1/users/${userId}/role`, {
+        method: 'PUT',
+        body: JSON.stringify({ is_superuser: isAdmin }),
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    }
+  },
 };
 
 export default apiService;

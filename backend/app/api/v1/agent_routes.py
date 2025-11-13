@@ -127,7 +127,7 @@ async def chat_with_agent(request: AgentRequest) -> AgentResponse:
             },
             video_info=video_info_list if video_info_list else None
         )
-        logger.info(f"[DEBUG] 返回的AgentResponse对象: {response_obj.dict()}")
+        logger.info(f"[DEBUG] 返回的AgentResponse对象: {response_obj.model_dump()}")
         logger.info(f"[DEBUG] video_info_list长度: {len(video_info_list) if video_info_list else 0}")
         
         # 返回构建好的响应对象
@@ -157,7 +157,7 @@ async def get_available_tools() -> AvailableToolsResponse:
         tools = mcp_server.get_available_tools()
         
         # 转换为可序列化的格式
-        tools_dict = [tool.dict() for tool in tools]
+        tools_dict = [tool.model_dump() for tool in tools]
         
         return AvailableToolsResponse(
             tools=tools_dict,
@@ -185,7 +185,7 @@ async def call_tool(request: ToolCallRequest) -> Dict[str, Any]:
             parameters=request.parameters
         )
         
-        return response.dict()
+        return response.model_dump()
         
     except Exception as e:
         logger.error(f"Error calling tool {request.tool_name}: {str(e)}")
@@ -213,7 +213,7 @@ async def test_agent_config(config: AgentConfig) -> Dict[str, Any]:
         return {
             "success": True,
             "message": "配置有效",
-            "config": config.dict()
+            "config": config.model_dump()
         }
         
     except ValueError as e:

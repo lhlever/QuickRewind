@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import field_validator, ConfigDict
 from typing import Optional, List
 import os
 import json
@@ -8,6 +8,11 @@ from pathlib import Path
 
 class Settings(BaseSettings):
     """应用配置管理"""
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=False
+    )
+    
     # 应用基础配置
     app_name: str = "QuickRewind"
     debug: bool = True
@@ -77,10 +82,6 @@ class Settings(BaseSettings):
     celery_enable_utc: bool = True
     
     # 移除可能导致问题的validator
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
     
     def __init__(self, **kwargs):
         # 移除可能导致问题的环境变量值
