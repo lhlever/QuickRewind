@@ -374,9 +374,9 @@ const VideoPlayer = forwardRef(({ video, videoData, initialTime = 0, autoPlay = 
 
   return (
     <div className="video-player-container">
-      {videoData?.title && (
+      {/* {videoData?.title && (
         <h2 className="video-title">{videoData.title}</h2>
-      )}
+      )} */}
       {/* 移除重复的标题栏，只保留主应用的标题栏 */}
       
       <div className="video-wrapper">
