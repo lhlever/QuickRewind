@@ -16,7 +16,7 @@ from app.services.llm_service import llm_service
 from app.core.database import get_db, SessionLocal
 from app.core.mcp import mcp_server
 from app.models.video import Video, VideoStatus, VideoOutline
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, get_current_active_user
 from app.models.user import User
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -694,9 +694,10 @@ async def get_video_outline(
 @router.post("/search")
 async def search_videos(
     request: dict,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
-    """搜索视频"""
+    """搜索视频 - 限制用户只能搜索自己上传的视频"""
     try:
         query = request.get("query", "")
         if not query:
@@ -706,49 +707,38 @@ async def search_videos(
                 "videos": []
             }
         
-        logger.info(f"开始搜索视频，查询内容: {query}")
+        logger.info(f"开始搜索视频，用户: {current_user.username}, 查询内容: {query}")
+        
+        # 获取当前用户上传的所有视频ID
+        user_videos = db.query(Video).filter(Video.user_id == current_user.id).all()
+        user_video_ids = [str(video.id) for video in user_videos]
+        
+        if not user_video_ids:
+            logger.info(f"用户 {current_user.username} 尚未上传任何视频")
+            return {
+                "message": f"您尚未上传任何视频，无法进行搜索",
+                "is_matched": False, 
+                "videos": []
+            }
+        
+        logger.info(f"用户 {current_user.username} 共有 {len(user_video_ids)} 个视频: {user_video_ids}")
         
         # 标准响应格式，默认包含一个视频，添加丰富的视频片段信息
         standard_result = {
-            "message": f"在视频库中找到 1 条与'{query}'相关的结果",
+            "message": f"在您的视频库中找到 1 条与'{query}'相关的结果",
             "is_matched": True,
-            "videos": [
-                {
-                    "id": "46f04d77-98a8-46c7-b5c3-a89b58f5edd5",
-                    "title": "combined_output.mov",
-                    "link": "/api/v1/videos/46f04d77-98a8-46c7-b5c3-a89b58f5edd5/outline",
-                    "matchedSubtitles": f"{query} - 这是匹配的视频内容片段，包含了与查询相关的关键信息",  # 直接使用驼峰命名
-                    "relevance": 95.0,
-                    "similarity": 95.0,
-                    "duration": "00:03:45",
-                    "timestamp": "10:25",
-                    "segments": [
-                        {
-                            "startTime": 10,
-                            "endTime": 25,
-                            "text": f"{query}相关的关键内容",
-                            "confidence": 0.95
-                        }
-                    ]
-                },
-                {
-                    "id": "second-video-123",
-                    "title": "技术演示视频",
-                    "link": "/api/v1/videos/second-video-123/outline",
-                    "matchedSubtitles": f"另一个包含{query}的相关视频片段",
-                    "relevance": 88.0,
-                    "similarity": 88.0,
-                    "duration": "00:05:20",
-                    "timestamp": "02:15"
-                }
-            ]
+            "videos": []  # 初始为空，等待填充实际搜索结果
         }
         
         # 尝试向量搜索，但无论结果如何都返回标准格式的响应
         try:
             vector_search_response = await mcp_server.call_tool_async(
                 tool_name="search_video_by_vector",
-                parameters={"query": query, "top_k": 10}
+                parameters={
+                    "query": query, 
+                    "top_k": 10,
+                    "user_video_ids": user_video_ids  # 传递用户视频ID列表
+                }
             )
             
             if vector_search_response.success and isinstance(vector_search_response.result, dict):

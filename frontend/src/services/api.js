@@ -7,11 +7,22 @@ const API_BASE_URL = 'http://localhost:8000'; // 假设后端服务运行在8000
 const request = async (endpoint, options = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
   
+  // 获取认证令牌
+  const token = localStorage.getItem('token');
+  const defaultHeaders = {
+    'Content-Type': 'application/json',
+  };
+  
+  // 如果有令牌，添加到请求头
+  if (token) {
+    defaultHeaders['Authorization'] = `Bearer ${token}`;
+  }
+  
   try {
     const response = await fetch(url, {
       ...options,
       headers: {
-        'Content-Type': 'application/json',
+        ...defaultHeaders,
         ...options.headers,
       },
     });

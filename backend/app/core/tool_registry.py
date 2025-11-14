@@ -6,7 +6,7 @@
 """
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 import asyncio
 
 from app.core.mcp import (
@@ -476,6 +476,12 @@ def register_prompt_templates():
             description="返回结果数量，默认10",
             required=False,
             default=10
+        ),
+        ToolParameter(
+            name="user_video_ids",
+            type="array",
+            description="用户上传的视频ID列表，用于限制搜索范围",
+            required=False
         )
     ],
     returns={
@@ -484,12 +490,17 @@ def register_prompt_templates():
     },
     tags=["video", "search", "vector", "mcp"]
 )
-async def search_video_by_vector_tool(query: str, top_k: int = 10) -> Dict[str, Any]:
+async def search_video_by_vector_tool(query: str, top_k: int = 10, user_video_ids: List[str] = None) -> Dict[str, Any]:
     """
     MCP工具：视频向量搜索
     
     使用查询文本生成向量，然后在Milvus向量数据库中搜索相似的视频内容。
     返回包含视频ID、匹配文本和时间戳的搜索结果。
+    
+    Args:
+        query: 搜索查询文本
+        top_k: 返回结果数量，默认10
+        user_video_ids: 用户上传的视频ID列表，用于限制搜索范围
     """
     import numpy as np
     from sqlalchemy.orm import Session
@@ -505,6 +516,10 @@ async def search_video_by_vector_tool(query: str, top_k: int = 10) -> Dict[str, 
     try:
         logger.info(f"开始向量搜索，查询: {query}, top_k: {top_k}")
         
+        # 如果提供了用户视频ID列表，记录日志
+        if user_video_ids:
+            logger.info(f"限制搜索范围到用户视频: {user_video_ids}")
+        
         # 为查询生成向量
         logger.info(f"正在为查询 '{query}' 生成向量表示")
         query_embedding = llm_service.generate_embedding(query)
@@ -516,11 +531,19 @@ async def search_video_by_vector_tool(query: str, top_k: int = 10) -> Dict[str, 
             # 搜索所有类型的内容（转录、摘要和字幕段落）
             search_results = mc.search_vectors(
                 query_vector=np.array(query_embedding),
-                top_k=top_k,
+                top_k=top_k * 2,  # 获取更多结果，以便过滤后仍有足够的结果
                 filters=None  # 不限制内容类型，搜索所有内容
             )
         
         logger.info(f"Milvus搜索完成，返回 {len(search_results)} 个向量结果")
+        
+        # 如果提供了用户视频ID列表，过滤结果
+        if user_video_ids:
+            search_results = [
+                result for result in search_results 
+                if result["video_id"] in user_video_ids
+            ]
+            logger.info(f"过滤后剩余 {len(search_results)} 个用户视频结果")
         
         # 去重处理，按视频ID分组
         video_groups = {}

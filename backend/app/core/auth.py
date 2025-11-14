@@ -115,13 +115,13 @@ def get_optional_current_user(
             return None
             
         token = parts[1]
-        user_id = verify_token(token)
+        username = verify_token(token)
         
-        if user_id is None:
+        if username is None:
             return None
             
         # 从数据库获取用户
-        user = db.query(User).filter(User.id == user_id).first()
+        user = db.query(User).filter(User.username == username).first()
         return user
     except Exception:
         return None
