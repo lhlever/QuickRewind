@@ -632,17 +632,111 @@ function App() {
     }
   }
   
-  // 处理发送按钮点击
-  const handleSend = () => {
-    if (!inputValue.trim()) return;
+  // 处理智能体对话发送
+  const handleSend = async (message) => {
+    if (!message.trim() || isLoading) return;
     
-    // 保存输入内容并清空
-    const query = inputValue.trim();
-    setInputValue('');
-    
-    // 调用生成AI响应的函数
-    generateResponse(query);
-  }
+    try {
+      setIsLoading(true);
+      
+      // 添加用户消息到聊天界面
+      const userMessage = {
+        id: Date.now(),
+        text: message,
+        sender: 'user',
+        timestamp: new Date().toLocaleTimeString()
+      };
+      setMessages(prev => [...prev, userMessage]);
+      
+      // 调用智能体API
+      console.log('发送消息给智能体:', message);
+      const response = await apiService.agent.sendMessage(message);
+      console.log('智能体响应:', response);
+      
+      // 处理智能体响应
+      handleAgentResponse(response, message);
+      
+    } catch (error) {
+      console.error('智能体对话失败:', error);
+      
+      // 添加错误消息
+      const errorMessage = {
+        id: Date.now(),
+        text: `智能体回复失败: ${error.message}`,
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString(),
+        videoResults: []
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // 处理智能体响应
+  const handleAgentResponse = (response, originalQuery) => {
+    try {
+      // 检查响应是否成功
+      if (response && response.success) {
+        const responseText = response.response || '抱歉，我没有理解您的问题。';
+        
+        // 获取视频信息（如果智能体返回了相关视频）
+        let videoResults = [];
+        if (response.video_info && Array.isArray(response.video_info)) {
+          videoResults = response.video_info.map(video => ({
+            id: video.video_id || video.id || Date.now().toString(),
+            title: video.title || '智能推荐视频',
+            relevance: Math.round((video.relevance_score || 75) * 100),
+            matchedSubtitles: video.snippet || video.description || '智能体推荐的相关内容',
+            video_id: video.video_id || video.id,
+            link: video.video_link || '',
+            thumbnail: video.thumbnail || ''
+          }));
+        }
+        
+        // 创建AI响应消息
+        const aiMessage = {
+          id: Date.now() + 1,
+          text: responseText,
+          sender: 'ai',
+          timestamp: new Date().toLocaleTimeString(),
+          videoResults: videoResults,
+          metadata: response.metadata || {}
+        };
+        
+        setMessages(prev => [...prev, aiMessage]);
+        
+        // 如果有视频结果，更新搜索结果
+        if (videoResults.length > 0) {
+          setSearchResults(videoResults);
+        }
+        
+      } else {
+        // 处理失败情况
+        const errorText = response?.response || '智能体处理失败，请重试。';
+        const errorMessage = {
+          id: Date.now() + 1,
+          text: errorText,
+          sender: 'ai',
+          timestamp: new Date().toLocaleTimeString(),
+          videoResults: []
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      console.error('处理智能体响应时出错:', error);
+      
+      // 添加错误消息
+      const errorMessage = {
+        id: Date.now() + 1,
+        text: `处理智能体响应时出错: ${error.message}`,
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString(),
+        videoResults: []
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    }
+  };
 
   // 处理Enter键发送
   const handleKeyPress = (e) => {
@@ -659,6 +753,7 @@ function App() {
         console.log('渲染ChatInterface组件，消息数据:', messages); // 添加调试信息
         return (
           <ChatInterface 
+            onSend={handleSend}
             onSearch={handleSearch}
             onUploadClick={handleUploadStart}
             messages={messages}
@@ -733,6 +828,7 @@ function App() {
       default:
         return (
           <ChatInterface 
+            onSend={handleSend}
             onSearch={handleSearch}
             onUploadClick={handleUploadStart}
             messages={messages}

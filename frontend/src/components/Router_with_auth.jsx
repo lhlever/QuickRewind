@@ -516,6 +516,9 @@ const RouterWithAuth = () => {
 
   // 生成AI响应
   const generateResponse = async (userQuery) => {
+    // 清空输入框
+    setInputValue('');
+    
     // 添加用户消息到聊天界面
     setMessages(prev => [...prev, {
       id: Date.now(),
@@ -612,22 +615,22 @@ const RouterWithAuth = () => {
   }
   
   // 处理发送按钮点击
-  const handleSend = () => {
-    if (!inputValue.trim()) return;
-    
-    // 保存输入内容并清空
-    const query = inputValue.trim();
-    setInputValue('');
+  const handleSend = (message) => {
+    if (!message || !message.trim()) return;
     
     // 调用生成AI响应的函数
-    generateResponse(query);
+    generateResponse(message);
   }
 
   // 处理Enter键发送
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      const inputElement = e.target;
+      const value = inputElement.value;
+      if (value.trim()) {
+        handleSend(value.trim());
+      }
     }
   }
 
@@ -639,6 +642,7 @@ const RouterWithAuth = () => {
         return (
           <ChatLayout 
             onSearch={handleSearch}
+            onSend={handleSend}
             onUploadClick={handleUploadStart}
             messages={messages}
             isLoading={isLoading}
@@ -723,6 +727,7 @@ const RouterWithAuth = () => {
         return (
           <ChatLayout 
             onSearch={handleSearch}
+            onSend={handleSend}
             onUploadClick={handleUploadStart}
             messages={messages}
             isLoading={isLoading}

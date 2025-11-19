@@ -582,8 +582,8 @@ async def search_video_by_vector_tool(query: str, top_k: int = 10, user_video_id
             logger.info(f"正在处理视频ID  : {video_id}")
             logger.info("+++++++++++++++++++")
             video = db.query(Video).filter(Video.id == video_id).first()
-            logger.info(f"视频ID {video_id} 元数据: {video.__dict__}")
             if video:
+                logger.info(f"视频ID {video_id} 元数据: {video.__dict__}")
                 # 计算相关度百分比
                 relevance = round((1.0 / (1.0 + group["best_match_score"])) * 100, 1)
                 
