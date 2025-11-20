@@ -106,3 +106,8 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
 async def logout(current_user: User = Depends(get_current_active_user)):
     """用户登出（客户端处理）"""
     return {"message": "成功登出"}
+
+@router.get("/health")
+async def health():
+    """健康检查"""
+    return {"message": "healthy"}

@@ -345,7 +345,7 @@ class Agent:
                     "title": "视频标题",
                     "thumbnail": "缩略图URL",
                     "video_link": "视频链接",
-                    "relevance_score": 相关度分数
+                    "relevance_score": "相关度分数"
                 }
             ]
             </video_info>
@@ -560,6 +560,9 @@ class Agent:
                     
                 def _extract_final_answer(self, response):
                     """提取最终答案"""
+                    print("="*100)
+                    print("原始响应:", response)
+                    print("="*100)
                     try:
                         # 检查多种可能的最终答案格式
                         if "Final Answer:" in response:
@@ -810,7 +813,7 @@ class Agent:
                     
                     # 准备增强的Planning-then-Execution模式系统提示
                     system_prompt = f"""
-                    你是{self.config.name}，一个{self.config.role}。
+                    你是系统号尾数为1437的{self.config.name}，一个{self.config.role}。
                     
                     请按照Planning-then-Execution模式思考并回答问题：
                     1. 首先制定简单的执行计划（Planning阶段）
