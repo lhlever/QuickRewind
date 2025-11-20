@@ -7,6 +7,13 @@ import SearchResults from './components/SearchResults'
 import VideoOutline from './components/VideoOutline'
 import { apiService } from './services/api'
 
+// ===== 测试代码 - 如果看到这个说明新代码加载了 =====
+const LOAD_TIMESTAMP = '2025-11-20 23:59:59';
+console.log('🚀🚀🚀 新版 App.jsx 已加载！时间:', new Date().toLocaleTimeString());
+console.log('🚀 代码加载时间戳:', LOAD_TIMESTAMP);
+alert('✅ 新版前端代码已加载！时间戳: ' + LOAD_TIMESTAMP);
+// ========================================
+
 function App() {
   // 预设问题数据
   const presetQuestions = [
@@ -632,13 +639,21 @@ function App() {
     }
   }
   
-  // 处理智能体对话发送
+  // 处理智能体对话发送 - 使用SSE流式返回
   const handleSend = async (message) => {
-    if (!message.trim() || isLoading) return;
-    
+    alert('NEW CODE - 使用流式API！');
+    console.log('[handleSend] 开始处理消息:', message);
+    console.log('[handleSend] isLoading:', isLoading);
+
+    if (!message.trim() || isLoading) {
+      console.log('[handleSend] 消息为空或正在加载，跳过');
+      return;
+    }
+
     try {
       setIsLoading(true);
-      
+      console.log('[handleSend] 设置 isLoading = true');
+
       // 添加用户消息到聊天界面
       const userMessage = {
         id: Date.now(),
@@ -647,18 +662,168 @@ function App() {
         timestamp: new Date().toLocaleTimeString()
       };
       setMessages(prev => [...prev, userMessage]);
-      
-      // 调用智能体API
-      console.log('发送消息给智能体:', message);
-      const response = await apiService.agent.sendMessage(message);
-      console.log('智能体响应:', response);
-      
-      // 处理智能体响应
-      handleAgentResponse(response, message);
-      
+      console.log('[handleSend] 已添加用户消息');
+
+      // 创建一个AI消息用于实时更新
+      const aiMessageId = Date.now() + 1;
+      const initialAiMessage = {
+        id: aiMessageId,
+        text: '',
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString(),
+        videoResults: [],
+        streamingStatus: {
+          phase: 'connecting',
+          message: '正在连接...'
+        }
+      };
+
+      // 添加初始AI消息
+      setMessages(prev => [...prev, initialAiMessage]);
+      console.log('[handleSend] 已添加初始AI消息，ID:', aiMessageId);
+
+      // 调用流式API
+      console.log('[handleSend] 准备调用 sendMessageStream，消息:', message);
+      console.log('[handleSend] API URL: http://localhost:8000/v1/agent/chat/stream');
+
+      await apiService.agent.sendMessageStream(message, {
+        onPlanningStart: (data) => {
+          console.log('Planning 开始:', data);
+          setMessages(prev => prev.map(msg =>
+            msg.id === aiMessageId
+              ? {
+                  ...msg,
+                  streamingStatus: {
+                    phase: 'planning',
+                    message: data.message || '正在制定执行计划...'
+                  }
+                }
+              : msg
+          ));
+        },
+
+        onPlanningComplete: (data) => {
+          console.log('Planning 完成:', data);
+          setMessages(prev => prev.map(msg =>
+            msg.id === aiMessageId
+              ? {
+                  ...msg,
+                  streamingStatus: {
+                    phase: 'planning_complete',
+                    message: '计划制定完成',
+                    plan: data.plan,
+                    reasoning: data.reasoning
+                  }
+                }
+              : msg
+          ));
+        },
+
+        onExecutionStart: (data) => {
+          console.log('Execution 开始:', data);
+          setMessages(prev => prev.map(msg =>
+            msg.id === aiMessageId
+              ? {
+                  ...msg,
+                  streamingStatus: {
+                    phase: 'execution',
+                    message: data.message || '开始执行计划...',
+                    totalSteps: data.total_steps,
+                    currentStep: 0,
+                    steps: []
+                  }
+                }
+              : msg
+          ));
+        },
+
+        onStepStart: (data) => {
+          console.log('步骤开始:', data);
+          setMessages(prev => prev.map(msg => {
+            if (msg.id === aiMessageId) {
+              const steps = msg.streamingStatus?.steps || [];
+              const newStep = {
+                number: data.step_number,
+                description: data.step_description,
+                status: 'running'
+              };
+              return {
+                ...msg,
+                streamingStatus: {
+                  ...msg.streamingStatus,
+                  phase: 'execution',
+                  currentStep: data.step_number,
+                  steps: [...steps.filter(s => s.number !== data.step_number), newStep]
+                }
+              };
+            }
+            return msg;
+          }));
+        },
+
+        onStepComplete: (data) => {
+          console.log('步骤完成:', data);
+          setMessages(prev => prev.map(msg => {
+            if (msg.id === aiMessageId) {
+              const steps = msg.streamingStatus?.steps || [];
+              const updatedSteps = steps.map(step =>
+                step.number === data.step_number
+                  ? { ...step, status: 'completed', action: data.action, result: data.result }
+                  : step
+              );
+              return {
+                ...msg,
+                streamingStatus: {
+                  ...msg.streamingStatus,
+                  steps: updatedSteps
+                }
+              };
+            }
+            return msg;
+          }));
+        },
+
+        onComplete: (data) => {
+          console.log('完成:', data);
+          // 更新最终消息
+          setMessages(prev => prev.map(msg =>
+            msg.id === aiMessageId
+              ? {
+                  ...msg,
+                  text: data.final_answer || '',
+                  videoResults: data.video_info || [],
+                  streamingStatus: {
+                    phase: 'complete',
+                    message: '完成',
+                    processingTime: data.processing_time
+                  }
+                }
+              : msg
+          ));
+          setIsLoading(false);
+        },
+
+        onError: (data) => {
+          console.error('错误:', data);
+          setMessages(prev => prev.map(msg =>
+            msg.id === aiMessageId
+              ? {
+                  ...msg,
+                  text: `处理失败: ${data.error}`,
+                  streamingStatus: {
+                    phase: 'error',
+                    message: data.error
+                  }
+                }
+              : msg
+          ));
+          setIsLoading(false);
+        }
+      });
+
     } catch (error) {
       console.error('智能体对话失败:', error);
-      
+
       // 添加错误消息
       const errorMessage = {
         id: Date.now(),
@@ -668,7 +833,6 @@ function App() {
         videoResults: []
       };
       setMessages(prev => [...prev, errorMessage]);
-    } finally {
       setIsLoading(false);
     }
   };

@@ -236,17 +236,320 @@ export const apiService = {
   
   // Agent相关API
   agent: {
-    // 发送消息给Agent
-    sendMessage: (message) => request('/v1/agent/chat', {
-      method: 'POST',
-      body: JSON.stringify({ message }),
-    }),
-    
+    // 发送消息给Agent - 改为调用 stream 端点
+    sendMessage: async (message) => {
+      console.log('[sendMessage-改造] 被调用，将使用 stream 端点');
+
+      // 收集所有事件
+      let finalResult = {
+        success: true,
+        response: '',
+        video_info: [],
+        processing_time: 0
+      };
+
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${API_BASE_URL}/v1/agent/chat/stream`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { 'Authorization': `Bearer ${token}` })
+          },
+          body: JSON.stringify({ message })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                console.log('[sendMessage-改造] 收到事件:', data.type);
+
+                // 只关心最终的 complete 事件
+                if (data.type === 'complete') {
+                  finalResult.response = data.final_answer || '';
+                  finalResult.video_info = data.video_info || [];
+                  finalResult.processing_time = data.processing_time || 0;
+                }
+              } catch (e) {
+                console.error('[sendMessage-改造] 解析失败:', e);
+              }
+            }
+          }
+        }
+
+        console.log('[sendMessage-改造] 返回最终结果:', finalResult);
+        return finalResult;
+      } catch (error) {
+        console.error('[sendMessage-改造] 失败:', error);
+        throw error;
+      }
+    },
+
+    // 发送消息给Agent - SSE流式返回 - 使用 XMLHttpRequest 避免缓冲
+    sendMessageStream: async (message, callbacks = {}) => {
+      return new Promise((resolve, reject) => {
+        const startTime = Date.now();
+        console.log('[sendMessageStream-XHR] ========== 开始SSE流式请求 ==========');
+        console.log('[sendMessageStream-XHR] 消息内容:', message);
+        console.log('[sendMessageStream-XHR] 回调函数:', Object.keys(callbacks));
+
+        const {
+          onPlanningStart,
+          onPlanningComplete,
+          onExecutionStart,
+          onStepStart,
+          onStepComplete,
+          onComplete,
+          onError
+        } = callbacks;
+
+        const token = localStorage.getItem('token');
+        const url = `${API_BASE_URL}/v1/agent/chat/stream`;
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url, true);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.setRequestHeader('Accept', 'text/event-stream');
+        xhr.setRequestHeader('Cache-Control', 'no-cache');
+        if (token) {
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        }
+
+        let buffer = '';
+        let eventCount = 0;
+        let lastPosition = 0;
+
+        // 监听进度事件 - 实时接收数据
+        xhr.onprogress = (e) => {
+          const progressTime = Date.now() - startTime;
+          console.log(`[sendMessageStream-XHR] [${progressTime}ms] onprogress触发 (loaded: ${e.loaded} bytes, total: ${e.total})`);
+
+          // 获取新数据
+          const newData = xhr.responseText.substring(lastPosition);
+          lastPosition = xhr.responseText.length;
+
+          if (!newData) return;
+
+          console.log(`[sendMessageStream-XHR] [${progressTime}ms] 收到新数据: ${newData.length} bytes`);
+
+          // 将新数据添加到缓冲区
+          buffer += newData;
+          const lines = buffer.split('\n');
+
+          // 保留最后一个可能不完整的行
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              eventCount++;
+              try {
+                const data = JSON.parse(line.slice(6));
+                const eventTime = Date.now() - startTime;
+                console.log(`[sendMessageStream-XHR] [${eventTime}ms] 事件 #${eventCount}: ${data.type}`);
+
+                // 立即同步调用回调
+                switch (data.type) {
+                  case 'connected':
+                    console.log(`[sendMessageStream-XHR] [${eventTime}ms] 连接成功`);
+                    break;
+                  case 'planning_start':
+                    console.log(`[sendMessageStream-XHR] [${eventTime}ms] 触发 onPlanningStart`);
+                    onPlanningStart && onPlanningStart(data);
+                    break;
+                  case 'planning_complete':
+                    console.log(`[sendMessageStream-XHR] [${eventTime}ms] 触发 onPlanningComplete`);
+                    onPlanningComplete && onPlanningComplete(data);
+                    break;
+                  case 'execution_start':
+                    console.log(`[sendMessageStream-XHR] [${eventTime}ms] 触发 onExecutionStart`);
+                    onExecutionStart && onExecutionStart(data);
+                    break;
+                  case 'step_start':
+                    console.log(`[sendMessageStream-XHR] [${eventTime}ms] 触发 onStepStart`);
+                    onStepStart && onStepStart(data);
+                    break;
+                  case 'step_complete':
+                    console.log(`[sendMessageStream-XHR] [${eventTime}ms] 触发 onStepComplete`);
+                    onStepComplete && onStepComplete(data);
+                    break;
+                  case 'complete':
+                    console.log(`[sendMessageStream-XHR] [${eventTime}ms] 触发 onComplete`);
+                    onComplete && onComplete(data);
+                    break;
+                  case 'error':
+                    console.log(`[sendMessageStream-XHR] [${eventTime}ms] 触发 onError`);
+                    onError && onError(data);
+                    break;
+                  default:
+                    console.log(`[sendMessageStream-XHR] [${eventTime}ms] 未知事件类型:`, data.type);
+                }
+              } catch (e) {
+                console.error('[sendMessageStream-XHR] 解析SSE数据失败:', e, line);
+              }
+            } else if (line.startsWith(':')) {
+              console.log(`[sendMessageStream-XHR] [${Date.now() - startTime}ms] 心跳`);
+            }
+          }
+        };
+
+        xhr.onload = () => {
+          const totalTime = Date.now() - startTime;
+          console.log(`[sendMessageStream-XHR] [${totalTime}ms] 请求完成，共收到 ${eventCount} 个事件`);
+          console.log('[sendMessageStream-XHR] ========== SSE流式请求结束 ==========');
+          resolve();
+        };
+
+        xhr.onerror = (e) => {
+          const errorTime = Date.now() - startTime;
+          console.error(`[sendMessageStream-XHR] [${errorTime}ms] 请求失败:`, e);
+          const error = new Error('Network error');
+          onError && onError({ error: error.message });
+          reject(error);
+        };
+
+        xhr.onabort = () => {
+          const abortTime = Date.now() - startTime;
+          console.log(`[sendMessageStream-XHR] [${abortTime}ms] 请求被中止`);
+          reject(new Error('Request aborted'));
+        };
+
+        // 发送请求
+        console.log('[sendMessageStream-XHR] 发送请求:', JSON.stringify({ message }));
+        xhr.send(JSON.stringify({ message }));
+      });
+    },
+
     // 基于视频内容提问
     askAboutVideo: (videoId, question) => request('/v1/agent/video-query', {
       method: 'POST',
       body: JSON.stringify({ video_id: videoId, question }),
     }),
+
+    // 💡 WebSocket 实时流式通信（真正的实时，不受localhost缓冲影响）
+    sendMessageWebSocket: (message, callbacks = {}) => {
+      return new Promise((resolve, reject) => {
+        const startTime = Date.now();
+        console.log('[WebSocket] ========== 开始WebSocket连接 ==========');
+        console.log('[WebSocket] 消息内容:', message);
+        console.log('[WebSocket] 回调函数:', Object.keys(callbacks));
+
+        const {
+          onPlanningStart,
+          onPlanningComplete,
+          onExecutionStart,
+          onStepStart,
+          onStepComplete,
+          onComplete,
+          onError
+        } = callbacks;
+
+        const token = localStorage.getItem('token');
+        const wsUrl = `ws://localhost:8000/v1/agent/ws/chat`;
+
+        const ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          const connectTime = Date.now() - startTime;
+          console.log(`[WebSocket] [${connectTime}ms] WebSocket连接成功`);
+
+          // 发送消息
+          ws.send(JSON.stringify({
+            message,
+            ...(token && { token })
+          }));
+          console.log('[WebSocket] 已发送消息到服务器');
+        };
+
+        ws.onmessage = (event) => {
+          const messageTime = Date.now() - startTime;
+
+          try {
+            const data = JSON.parse(event.data);
+            console.log(`[WebSocket] [${messageTime}ms] 收到消息: ${data.type}`);
+
+            // 立即调用对应的回调函数
+            switch (data.type) {
+              case 'connected':
+                console.log(`[WebSocket] [${messageTime}ms] 连接确认`);
+                break;
+
+              case 'planning_start':
+                console.log(`[WebSocket] [${messageTime}ms] 触发 onPlanningStart`);
+                onPlanningStart && onPlanningStart(data);
+                break;
+
+              case 'planning_complete':
+                console.log(`[WebSocket] [${messageTime}ms] 触发 onPlanningComplete`);
+                onPlanningComplete && onPlanningComplete(data);
+                break;
+
+              case 'execution_start':
+                console.log(`[WebSocket] [${messageTime}ms] 触发 onExecutionStart`);
+                onExecutionStart && onExecutionStart(data);
+                break;
+
+              case 'step_start':
+                console.log(`[WebSocket] [${messageTime}ms] 触发 onStepStart`);
+                onStepStart && onStepStart(data);
+                break;
+
+              case 'step_complete':
+                console.log(`[WebSocket] [${messageTime}ms] 触发 onStepComplete`);
+                onStepComplete && onStepComplete(data);
+                break;
+
+              case 'complete':
+                console.log(`[WebSocket] [${messageTime}ms] 触发 onComplete`);
+                onComplete && onComplete(data);
+                ws.close();
+                resolve();
+                break;
+
+              case 'error':
+                console.error(`[WebSocket] [${messageTime}ms] 触发 onError`);
+                onError && onError(data);
+                ws.close();
+                reject(new Error(data.error));
+                break;
+
+              default:
+                console.log(`[WebSocket] [${messageTime}ms] 未知事件类型:`, data.type);
+            }
+          } catch (e) {
+            console.error('[WebSocket] 解析消息失败:', e, event.data);
+          }
+        };
+
+        ws.onerror = (error) => {
+          const errorTime = Date.now() - startTime;
+          console.error(`[WebSocket] [${errorTime}ms] WebSocket错误:`, error);
+          const err = new Error('WebSocket connection error');
+          onError && onError({ error: err.message });
+          reject(err);
+        };
+
+        ws.onclose = () => {
+          const closeTime = Date.now() - startTime;
+          console.log(`[WebSocket] [${closeTime}ms] WebSocket连接关闭`);
+          console.log('[WebSocket] ========== WebSocket通信结束 ==========');
+        };
+      });
+    },
   },
   
   // 用户管理相关API

@@ -1,18 +1,24 @@
 import { useRef, useEffect, useState } from 'react'
 import './ChatInterface.css'
 
-const ChatInterface = ({ 
-  onSearch, 
-  messages = [], 
-  isLoading = false, 
-  onUploadClick, 
-  onPresetClick, 
-  onVideoClick, 
+// 测试代码 - 确认文件已加载
+console.log('✅✅✅ ChatInterface.jsx 已加载！时间:', new Date().toLocaleTimeString());
+
+const ChatInterface = ({
+  onSearch,
+  messages = [],
+  isLoading = false,
+  onUploadClick,
+  onPresetClick,
+  onVideoClick,
   onViewOutline,
   inputValue: externalInputValue,
   onInputChange,
   onSend
 }) => {
+//   console.log('🔵 ChatInterface 组件渲染，onSend:', typeof onSend);
+
+
   const chatContainerRef = useRef(null)
   const lastMessageRef = useRef(null)
   const [internalInputValue, setInternalInputValue] = useState('')
@@ -79,12 +85,27 @@ const ChatInterface = ({
 
   // 处理发送消息
   const handleSendMessage = () => {
+    console.log('🎯🎯🎯 [ChatInterface] handleSendMessage 被调用！');
+    console.log('[ChatInterface] inputValue:', inputValue);
+    console.log('[ChatInterface] isLoading:', isLoading);
+    console.log('[ChatInterface] onSend存在吗:', !!onSend);
+
     if (inputValue.trim() && !isLoading) {
+      const message = inputValue.trim();
+      console.log('[ChatInterface] 准备发送消息:', message);
+
+      // 先清空输入框
+      setInputValue('');
+
       if (onSend) {
-        onSend(inputValue.trim())
+        console.log('[ChatInterface] 调用 onSend，消息:', message);
+        onSend(message);
       } else if (onSearch) {
-        onSearch(inputValue.trim())
+        console.log('[ChatInterface] 调用 onSearch，消息:', message);
+        onSearch(message);
       }
+    } else {
+      console.log('[ChatInterface] 不发送消息，原因: inputValue为空或正在加载');
     }
   }
 
@@ -142,17 +163,17 @@ const ChatInterface = ({
 
   // 格式化消息文本，处理视频链接和Markdown格式
   const formatMessage = (text, videoResults = []) => {
-    console.log('formatMessage - 接收到的videoResults:', videoResults);
-    console.log('formatMessage - videoResults类型:', typeof videoResults);
-    console.log('formatMessage - videoResults是否为数组:', Array.isArray(videoResults));
-    console.log('formatMessage - videoResults长度:', Array.isArray(videoResults) ? videoResults.length : 'N/A');
+//     console.log('formatMessage - 接收到的videoResults:', videoResults);
+//     console.log('formatMessage - videoResults类型:', typeof videoResults);
+//     console.log('formatMessage - videoResults是否为数组:', Array.isArray(videoResults));
+//     console.log('formatMessage - videoResults长度:', Array.isArray(videoResults) ? videoResults.length : 'N/A');
     
     // 确保text是字符串类型
     const messageText = typeof text === 'string' ? text : String(text || '');
     
     // 确保videoResults是数组
     const validVideoResults = Array.isArray(videoResults) ? videoResults : [];
-    console.log('formatMessage - 处理后的有效视频结果数量:', validVideoResults.length);
+//     console.log('formatMessage - 处理后的有效视频结果数量:', validVideoResults.length);
     
     // 为视频卡片创建HTML模板
       const createVideoCard = (videoData) => {
@@ -264,17 +285,17 @@ const ChatInterface = ({
         {messages.map((message, index) => {
           // 为最后一条消息添加ref
           const isLastMessage = index === messages.length - 1;
-          console.log("--------");
-          console.log(message);
-          console.log("--------");
-          // 详细调试信息
-          console.log(`处理消息 ${index} (ID: ${message.id})`, { 
-            text: message.text,
-            sender: message.sender,
-            hasVideoResults: message.videoResults && message.videoResults.length > 0,
-            videoResultsType: typeof message.videoResults,
-            videoResultsLength: Array.isArray(message.videoResults) ? message.videoResults.length : '非数组'
-          });
+//           console.log("--------");
+//           console.log(message);
+//           console.log("--------");
+//           // 详细调试信息
+//           console.log(`处理消息 ${index} (ID: ${message.id})`, {
+//             text: message.text,
+//             sender: message.sender,
+//             hasVideoResults: message.videoResults && message.videoResults.length > 0,
+//             videoResultsType: typeof message.videoResults,
+//             videoResultsLength: Array.isArray(message.videoResults) ? message.videoResults.length : '非数组'
+//           });
           
           // 处理视频结果，增强容错能力
           let safeVideoResults = [];
@@ -297,8 +318,103 @@ const ChatInterface = ({
           // 增强文本内容处理
           const messageText = message.text || message.content || '';
           
+          // 渲染流式状态进度
+          const renderStreamingStatus = (streamingStatus) => {
+            if (!streamingStatus) return null;
+
+            const { phase, message: statusMsg, plan, reasoning, steps, totalSteps, currentStep } = streamingStatus;
+
+            return (
+              <div className="streaming-status">
+                {/* Planning 阶段 */}
+                {phase === 'planning' && (
+                  <div className="status-phase planning">
+                    <div className="phase-indicator">
+                      <span className="spinner">⚙️</span>
+                      <span className="phase-label">规划阶段</span>
+                    </div>
+                    <p className="status-message">{statusMsg}</p>
+                  </div>
+                )}
+
+                {/* Planning 完成 */}
+                {phase === 'planning_complete' && (
+                  <div className="status-phase planning-complete">
+                    <div className="phase-indicator">
+                      <span className="check-icon">✓</span>
+                      <span className="phase-label">计划完成</span>
+                    </div>
+                    {plan && plan.length > 0 && (
+                      <div className="plan-details">
+                        <p className="plan-title">执行计划:</p>
+                        <ol className="plan-steps">
+                          {plan.map((step, idx) => (
+                            <li key={idx}>{step}</li>
+                          ))}
+                        </ol>
+                        {reasoning && <p className="reasoning"><strong>推理:</strong> {reasoning}</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Execution 阶段 */}
+                {phase === 'execution' && (
+                  <div className="status-phase execution">
+                    <div className="phase-indicator">
+                      <span className="spinner">⚡</span>
+                      <span className="phase-label">执行阶段</span>
+                    </div>
+                    <p className="status-message">
+                      正在执行步骤 {currentStep}/{totalSteps}
+                    </p>
+                    {steps && steps.length > 0 && (
+                      <div className="execution-steps">
+                        {steps.map((step) => (
+                          <div key={step.number} className={`step step-${step.status}`}>
+                            <div className="step-header">
+                              <span className="step-number">步骤 {step.number}</span>
+                              <span className="step-status">
+                                {step.status === 'running' ? '🔄 执行中' : '✓ 完成'}
+                              </span>
+                            </div>
+                            <p className="step-description">{step.description}</p>
+                            {step.status === 'completed' && step.result && (
+                              <p className="step-result">结果: {step.result.substring(0, 100)}...</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 完成 */}
+                {phase === 'complete' && (
+                  <div className="status-phase complete">
+                    <div className="phase-indicator">
+                      <span className="check-icon">✓</span>
+                      <span className="phase-label">完成</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 错误 */}
+                {phase === 'error' && (
+                  <div className="status-phase error">
+                    <div className="phase-indicator">
+                      <span className="error-icon">✗</span>
+                      <span className="phase-label">错误</span>
+                    </div>
+                    <p className="error-message">{statusMsg}</p>
+                  </div>
+                )}
+              </div>
+            );
+          };
+
           return (
-            <div 
+            <div
                 key={message.id}
                 className={`message ${message.sender}`}
                 data-has-videos={safeVideoResults.length > 0 ? 'true' : 'false'}
@@ -309,8 +425,12 @@ const ChatInterface = ({
                   </span>
                   <span className="message-time">{message.timestamp}</span>
                 </div>
+
+                {/* 显示流式状态 */}
+                {message.streamingStatus && renderStreamingStatus(message.streamingStatus)}
+
                 <div className="message-content">
-                  <div 
+                  <div
                     className="message-text"
                     ref={isLastMessage ? lastMessageRef : null}
                     dangerouslySetInnerHTML={{ __html: formatMessage(messageText, safeVideoResults) }}

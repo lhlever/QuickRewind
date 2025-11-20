@@ -372,41 +372,89 @@ class Agent:
                     # 获取输入参数
                     user_input = inputs.get("input", "")
                     chat_history = inputs.get("chat_history", [])
-                    
+                    stream_callback = inputs.get("stream_callback", None)  # 新增流式回调
+
+                    self.logger.info(f"[ainvoke] 被调用, user_input={user_input[:50]}...")
+                    self.logger.info(f"[ainvoke] stream_callback 是否存在: {stream_callback is not None}")
+
                     # 初始化对话历史和执行状态
                     dialog_history = chat_history.copy()
                     dialog_history.append({"role": "user", "content": user_input})
                     self.execution_state = {"plan": [], "results": {}, "current_step": 0}
-                    
+
                     try:
                         # ======== Planning阶段 ========
+                        import time
+                        callback_start = time.time()
+                        if stream_callback:
+                            self.logger.info(f"[ainvoke] [{time.time():.2f}] 准备调用 stream_callback - planning_start")
+                            await stream_callback({
+                                "type": "planning_start",
+                                "message": "开始规划阶段..."
+                            })
+                            # 关键：显式yield控制权给事件循环，让队列数据被消费
+                            await asyncio.sleep(0)
+                            self.logger.info(f"[ainvoke] [{time.time():.2f}] stream_callback 调用完成 - planning_start (耗时: {time.time()-callback_start:.3f}s)")
+                        else:
+                            self.logger.warning("[ainvoke] stream_callback 不存在，跳过 planning_start")
+
                         plan_steps, plan_reasoning = await self._planning_phase(
                             user_input, dialog_history
                         )
-                        
+
                         if not plan_steps:
                             self.logger.error("[Planning-then-Execution模式] 无法生成有效的执行计划")
                             return {"output": "无法生成有效的执行计划，请重试。"}
-                        
+
+                        # 发送规划结果
+                        if stream_callback:
+                            await stream_callback({
+                                "type": "planning_complete",
+                                "plan": plan_steps,
+                                "reasoning": plan_reasoning
+                            })
+                            await asyncio.sleep(0)  # Yield控制权
+
                         # 保存计划信息
                         execution_history = [
                             f"生成的计划:",
                             f"{plan_reasoning}",
                             f"执行步骤列表: {', '.join(plan_steps)}"
                         ]
-                        
+
                         # ======== Execution阶段 ========
+                        if stream_callback:
+                            await stream_callback({
+                                "type": "execution_start",
+                                "message": "开始执行阶段...",
+                                "total_steps": len(plan_steps)
+                            })
+                            await asyncio.sleep(0)  # Yield控制权
+
                         final_result = await self._execution_phase(
-                            user_input, 
-                            dialog_history, 
-                            execution_history, 
-                            plan_steps
+                            user_input,
+                            dialog_history,
+                            execution_history,
+                            plan_steps,
+                            stream_callback  # 传递回调
                         )
-                        
+
+                        # 发送完成信号
+                        if stream_callback:
+                            await stream_callback({
+                                "type": "complete",
+                                "final_answer": final_result
+                            })
+
                         return {"output": final_result}
-                        
+
                     except Exception as e:
                         self.logger.error(f"[Planning-then-Execution模式] 执行过程出错: {str(e)}")
+                        if stream_callback:
+                            await stream_callback({
+                                "type": "error",
+                                "error": str(e)
+                            })
                         return {"output": f"执行过程中发生错误: {str(e)}。请稍后重试。"}
                 
                 async def _planning_phase(self, user_input, dialog_history):
@@ -437,14 +485,23 @@ class Agent:
                     
                     return plan_steps, reasoning
                     
-                async def _execution_phase(self, user_input, dialog_history, execution_history, plan_steps):
+                async def _execution_phase(self, user_input, dialog_history, execution_history, plan_steps, stream_callback=None):
                     """Execution阶段：执行计划并生成最终结果"""
                     self.logger.info(f"[Planning-then-Execution模式] 开始Execution阶段，共{len(plan_steps)}个步骤")
-                    
+
                     # 执行每个计划步骤
                     for step_num, step_description in enumerate(plan_steps, 1):
                         self.current_step = step_num
                         self.logger.info(f"[Planning-then-Execution模式] 执行步骤 {step_num}/{len(plan_steps)}: {step_description}")
+
+                        # 发送步骤开始事件
+                        if stream_callback:
+                            await stream_callback({
+                                "type": "step_start",
+                                "step_number": step_num,
+                                "step_description": step_description,
+                                "total_steps": len(plan_steps)
+                            })
                         
                         # 构建执行步骤的提示
                         execution_prompt = planning_execution_prompt
@@ -498,7 +555,16 @@ class Agent:
                             execution_history.append(f"Result: {direct_answer}")
                             self.execution_state["results"][step_num] = direct_answer
                             self.logger.info(f"[Planning-then-Execution模式] 步骤 {step_num} 直接回答: {direct_answer}")
-                            
+
+                            # 发送步骤完成事件
+                            if stream_callback:
+                                await stream_callback({
+                                    "type": "step_complete",
+                                    "step_number": step_num,
+                                    "action": "Direct Answer",
+                                    "result": direct_answer
+                                })
+
                             # 添加直接回答的原因记录，便于调试
                             self.logger.info(f"[Planning-then-Execution模式] 步骤 {step_num} 使用直接回答，跳过工具调用")
                         else:
@@ -510,16 +576,25 @@ class Agent:
                                 if tool_name_candidate in self.tool_map:
                                     self.logger.info(f"[Planning-then-Execution模式] 规范化工具调用格式")
                                     action = f"{tool_name_candidate}()"
-                            
+
                             # 尝试调用工具
                             self.logger.info(f"[Planning-then-Execution模式] 准备调用工具: {action}")
                             tool_result = await self._execute_tool(action)
                             execution_history.append(f"Result: {tool_result}")
                             self.execution_state["results"][step_num] = tool_result
-                            
+
+                            # 发送步骤完成事件
+                            if stream_callback:
+                                await stream_callback({
+                                    "type": "step_complete",
+                                    "step_number": step_num,
+                                    "action": action,
+                                    "result": tool_result
+                                })
+
                             # 添加更详细的日志，便于调试
                             self.logger.info(f"[Planning-then-Execution模式] 步骤 {step_num} 工具执行结果: {tool_result[:100]}...")
-                            
+
                             # 检查是否为工具调用失败的情况
                             if "错误" in tool_result or "失败" in tool_result or "未知" in tool_result:
                                 self.logger.warning(f"[Planning-then-Execution模式] 步骤 {step_num} 工具调用可能失败: {tool_result}")
@@ -809,8 +884,12 @@ class Agent:
                 async def ainvoke(self, inputs):
                     user_input = inputs.get("input", "")
                     dialog_history = inputs.get("chat_history", [])
+                    stream_callback = inputs.get("stream_callback", None)  # 获取流式回调
                     execution_history = []
-                    
+
+                    self.logger.info(f"[Fallback ainvoke] 被调用, user_input={user_input[:50]}...")
+                    self.logger.info(f"[Fallback ainvoke] stream_callback 是否存在: {stream_callback is not None}")
+
                     # 准备增强的Planning-then-Execution模式系统提示
                     system_prompt = f"""
                     你是系统号尾数为1437的{self.config.name}，一个{self.config.role}。
@@ -872,6 +951,14 @@ class Agent:
                         except Exception as e:
                             self.logger.warning(f"[Fallback-工具] 获取工具失败: {str(e)}")
                         
+                        # 发送 Planning 开始事件
+                        if stream_callback:
+                            self.logger.info("[Fallback] 发送 planning_start 事件")
+                            await stream_callback({
+                                "type": "planning_start",
+                                "message": "开始规划阶段..."
+                            })
+
                         # 调用LLM生成计划
                         self.logger.info(f"[Planning-then-Execution模式-异常恢复] 调用大模型生成计划")
                         response = await self.llm_service.generate_async(
@@ -879,9 +966,24 @@ class Agent:
                             system_prompt=system_prompt,
                             temperature=0.7
                         )
-                        
+
+                        print("="*100)
+                        print("最原始响应:", response)
+                        print("="*100)
+
                         # 解析计划
                         plan = []
+                        reasoning = "无详细推理"
+
+                        # 提取推理过程
+                        if "Reasoning:" in response:
+                            reason_start = response.index("Reasoning:") + len("Reasoning:")
+                            next_section = response.find("\n\n", reason_start)
+                            if next_section != -1:
+                                reasoning = response[reason_start:next_section].strip()
+                            else:
+                                reasoning = response[reason_start:].strip()
+
                         if "Plan:" in response:
                             plan_start = response.index("Plan:") + len("Plan:")
                             if "Reasoning:" in response:
@@ -897,7 +999,25 @@ class Agent:
                                     plan.append(step_text)
                         
                         self.logger.info(f"[Fallback-执行] 提取到 {len(plan)} 个计划步骤")
-                        
+
+                        # 发送 Planning 完成事件
+                        if stream_callback:
+                            self.logger.info("[Fallback] 发送 planning_complete 事件")
+                            await stream_callback({
+                                "type": "planning_complete",
+                                "plan": plan,
+                                "reasoning": reasoning
+                            })
+
+                        # 发送 Execution 开始事件
+                        if stream_callback and plan:
+                            self.logger.info("[Fallback] 发送 execution_start 事件")
+                            await stream_callback({
+                                "type": "execution_start",
+                                "message": "开始执行阶段...",
+                                "total_steps": len(plan)
+                            })
+
                         # 执行计划
                         if plan:
                             for step_num, step_description in enumerate(plan, 1):

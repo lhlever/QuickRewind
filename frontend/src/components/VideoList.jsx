@@ -19,11 +19,11 @@ const VideoList = ({ onVideoClick, onViewDetail, activeVideoId }) => {
         
         // 添加更详细的调试日志
         if (videoList && videoList.length > 0) {
-          console.log('视频列表类型:', typeof videoList);
-          console.log('视频列表是否为数组:', Array.isArray(videoList));
-          console.log('第一个视频对象结构:', JSON.stringify(videoList[0], null, 2));
-          console.log('第一个视频的所有属性:', Object.keys(videoList[0]));
-          console.log('第一个视频的ID字段:', videoList[0].id, videoList[0]._id, videoList[0].video_id);
+//           console.log('视频列表类型:', typeof videoList);
+//           console.log('视频列表是否为数组:', Array.isArray(videoList));
+//           console.log('第一个视频对象结构:', JSON.stringify(videoList[0], null, 2));
+//           console.log('第一个视频的所有属性:', Object.keys(videoList[0]));
+//           console.log('第一个视频的ID字段:', videoList[0].id, videoList[0]._id, videoList[0].video_id);
           
           // 遍历所有视频，检查ID字段
           videoList.forEach((video, index) => {

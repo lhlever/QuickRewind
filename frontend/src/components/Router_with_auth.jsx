@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import AuthPage from './AuthPage';
 import { useAuth } from '../contexts/AuthContext';
 import ChatLayout from './ChatLayout';
@@ -614,12 +615,145 @@ const RouterWithAuth = () => {
     }
   }
   
-  // 处理发送按钮点击
-  const handleSend = (message) => {
-    if (!message || !message.trim()) return;
-    
-    // 调用生成AI响应的函数
-    generateResponse(message);
+  // 处理发送按钮点击 - 使用SSE流式返回，每个步骤发送独立消息
+  const handleSend = async (message) => {
+    console.log('🚀🚀🚀 [handleSend] 新版代码执行！时间:', new Date().toLocaleTimeString());
+    console.log('[handleSend] 开始处理消息:', message);
+    console.log('[handleSend] apiService类型:', typeof apiService);
+    console.log('[handleSend] apiService.agent类型:', typeof apiService?.agent);
+    console.log('[handleSend] sendMessageStream类型:', typeof apiService?.agent?.sendMessageStream);
+
+    if (!message || !message.trim() || isLoading) {
+      console.log('[handleSend] 消息为空或正在加载，跳过');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      // 添加用户消息
+      const userMessage = {
+        id: Date.now(),
+        text: message,
+        sender: 'user',
+        timestamp: new Date().toLocaleTimeString()
+      };
+      setMessages(prev => [...prev, userMessage]);
+
+      // 💡 调用WebSocket流式API - 真正的实时流式，不受localhost缓冲影响
+      await apiService.agent.sendMessageWebSocket(message, {
+        onPlanningStart: (data) => {
+          console.log('Planning 开始:', data);
+          // 使用 flushSync 强制立即更新 UI
+          flushSync(() => {
+            setMessages(prev => [...prev, {
+              id: Date.now(),
+              text: '📋 ' + (data.message || '开始制定执行计划...'),
+              sender: 'ai',
+              timestamp: new Date().toLocaleTimeString(),
+              isSystemMessage: true
+            }]);
+          });
+        },
+
+        onPlanningComplete: (data) => {
+          console.log('Planning 完成:', data);
+          const planText = data.plan && data.plan.length > 0
+            ? '📝 执行计划：\n' + data.plan.map((step, idx) => `${idx + 1}. ${step}`).join('\n')
+            : '计划制定完成';
+
+          flushSync(() => {
+            setMessages(prev => [...prev, {
+              id: Date.now(),
+              text: planText,
+              sender: 'ai',
+              timestamp: new Date().toLocaleTimeString(),
+              isSystemMessage: true
+            }]);
+          });
+        },
+
+        onExecutionStart: (data) => {
+          console.log('Execution 开始:', data);
+          flushSync(() => {
+            setMessages(prev => [...prev, {
+              id: Date.now(),
+              text: `⚙️ ${data.message || '开始执行计划...'} (共 ${data.total_steps || 0} 个步骤)`,
+              sender: 'ai',
+              timestamp: new Date().toLocaleTimeString(),
+              isSystemMessage: true
+            }]);
+          });
+        },
+
+        onStepStart: (data) => {
+          console.log('步骤开始:', data);
+          flushSync(() => {
+            setMessages(prev => [...prev, {
+              id: Date.now(),
+              text: `🔄 步骤 ${data.step_number}: ${data.step_description}`,
+              sender: 'ai',
+              timestamp: new Date().toLocaleTimeString(),
+              isSystemMessage: true
+            }]);
+          });
+        },
+
+        onStepComplete: (data) => {
+          console.log('步骤完成:', data);
+          const resultText = data.result
+            ? `✅ 步骤 ${data.step_number} 完成\n执行动作: ${data.action}\n结果: ${data.result}`
+            : `✅ 步骤 ${data.step_number} 完成`;
+
+          flushSync(() => {
+            setMessages(prev => [...prev, {
+              id: Date.now(),
+              text: resultText,
+              sender: 'ai',
+              timestamp: new Date().toLocaleTimeString(),
+              isSystemMessage: true
+            }]);
+          });
+        },
+
+        onComplete: (data) => {
+          console.log('完成:', data);
+          flushSync(() => {
+            setMessages(prev => [...prev, {
+              id: Date.now(),
+              text: data.final_answer || '处理完成',
+              sender: 'ai',
+              timestamp: new Date().toLocaleTimeString(),
+              videoResults: data.video_info || []
+            }]);
+            setIsLoading(false);
+          });
+        },
+
+        onError: (data) => {
+          console.error('错误:', data);
+          flushSync(() => {
+            setMessages(prev => [...prev, {
+              id: Date.now(),
+              text: `❌ 处理失败: ${data.error}`,
+              sender: 'ai',
+              timestamp: new Date().toLocaleTimeString()
+            }]);
+            setIsLoading(false);
+          });
+        }
+      });
+
+    } catch (error) {
+      console.error('智能体对话失败:', error);
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        text: `智能体回复失败: ${error.message}`,
+        sender: 'ai',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+      setIsLoading(false);
+    }
   }
 
   // 处理Enter键发送
@@ -638,7 +772,7 @@ const RouterWithAuth = () => {
   const renderContent = () => {
     switch (activeView) {
       case 'chat':
-        console.log('渲染ChatLayout组件，消息数据:', messages); // 添加调试信息
+//         console.log('渲染ChatLayout组件，消息数据:', messages); // 添加调试信息
         return (
           <ChatLayout 
             onSearch={handleSearch}

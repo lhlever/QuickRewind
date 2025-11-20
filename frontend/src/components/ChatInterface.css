@@ -6,6 +6,170 @@
   overflow: hidden;
 }
 
+/* 流式状态样式 */
+.streaming-status {
+  margin: 10px 0;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border-left: 3px solid #4CAF50;
+}
+
+.status-phase {
+  margin-bottom: 10px;
+}
+
+.phase-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.phase-label {
+  font-weight: 600;
+  color: #333;
+}
+
+.status-message {
+  margin: 5px 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.plan-details {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: #fff;
+  border-radius: 6px;
+}
+
+.plan-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.plan-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: #555;
+}
+
+.plan-steps li {
+  margin: 6px 0;
+  line-height: 1.5;
+}
+
+.reasoning {
+  margin-top: 10px;
+  padding: 8px;
+  background-color: #f0f7ff;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #555;
+}
+
+.execution-steps {
+  margin-top: 10px;
+}
+
+.step {
+  margin: 8px 0;
+  padding: 10px;
+  background-color: #fff;
+  border-radius: 6px;
+  border-left: 3px solid #ddd;
+}
+
+.step-running {
+  border-left-color: #2196F3;
+  animation: pulse-border 1.5s ease-in-out infinite;
+}
+
+.step-completed {
+  border-left-color: #4CAF50;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-left-width: 3px; }
+  50% { border-left-width: 5px; }
+}
+
+.step-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.step-number {
+  font-weight: 600;
+  color: #333;
+  font-size: 13px;
+}
+
+.step-status {
+  font-size: 12px;
+  color: #666;
+}
+
+.step-description {
+  margin: 6px 0;
+  color: #555;
+  font-size: 14px;
+}
+
+.step-result {
+  margin-top: 8px;
+  padding: 6px;
+  background-color: #f0f7ff;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #666;
+  font-family: monospace;
+}
+
+.check-icon {
+  color: #4CAF50;
+  font-weight: bold;
+}
+
+.error-icon {
+  color: #f44336;
+  font-weight: bold;
+}
+
+.status-phase.error {
+  border-left-color: #f44336;
+}
+
+.status-phase.error .error-message {
+  color: #d32f2f;
+  font-weight: 500;
+}
+
+.status-phase.complete {
+  border-left-color: #4CAF50;
+}
+
+.status-phase.planning {
+  border-left-color: #FF9800;
+}
+
+.status-phase.execution {
+  border-left-color: #2196F3;
+}
+
 .chat-header {
   padding: calc(var(--space-xs, 8px) * 0.9) calc(var(--space-sm, 12px) * 1.2);
   background-color: #ffffff;
