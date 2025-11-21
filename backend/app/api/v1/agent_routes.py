@@ -521,6 +521,108 @@ async def chat_with_agent_stream(request: AgentRequest):
     )
 
 
+@router.post("/evaluate")
+async def evaluate_question(request: AgentRequest) -> AgentResponse:
+    """
+    评估接口 - 专门用于测试和评估
+
+    不需要token验证，接收问题并返回标准化答案，用于评测系统调用。
+    包含详细的元数据用于性能分析。
+    """
+    import time
+    import re
+    start_time = time.time()
+
+    try:
+        logger.info(f"[Evaluate] 收到评估请求: {request.message[:100]}...")
+
+        # 创建agent配置
+        config = request.config or AgentConfig()
+
+        # 创建agent
+        agent = agent_service.create_agent(config)
+
+        # 准备输入
+        inputs = {
+            "input": request.message
+        }
+
+        logger.info("[Evaluate] 开始调用agent执行器")
+
+        # 调用agent执行器
+        response = await agent.agent_executor.ainvoke(inputs)
+
+        logger.info("[Evaluate] agent执行器调用完成")
+
+        # 提取结果
+        if isinstance(response, dict) and "output" in response:
+            result = response.get("output", "")
+        else:
+            result = response
+
+        # 计算处理时间和token估算
+        processing_time = time.time() - start_time
+
+        # 简单的token估算（中文约2字符=1token，英文约4字符=1token）
+        # 这是粗略估算，实际应该使用tokenizer
+        def estimate_tokens(text: str) -> int:
+            chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+            other_chars = len(text) - chinese_chars
+            return int(chinese_chars / 2 + other_chars / 4)
+
+        question_tokens = estimate_tokens(request.message)
+        answer_tokens = estimate_tokens(result)
+        total_tokens = question_tokens + answer_tokens
+
+        # 检查是否包含引用
+        def has_citations(text: str) -> bool:
+            citation_patterns = [
+                r'\[\d+\]',  # [1], [2]
+                r'\(来源:.*?\)',  # (来源:xxx)
+                r'引用自',
+                r'参考'
+            ]
+            for pattern in citation_patterns:
+                if re.search(pattern, text):
+                    return True
+            return False
+
+        logger.info(f"[Evaluate] 评估完成，耗时: {processing_time:.2f}s, tokens: {total_tokens}")
+
+        # 构建响应
+        return AgentResponse(
+            success=True,
+            response=result,
+            processing_time=processing_time,
+            metadata={
+                "question_length": len(request.message),
+                "answer_length": len(result),
+                "question_tokens": question_tokens,
+                "answer_tokens": answer_tokens,
+                "total_tokens": total_tokens,
+                "latency_ms": processing_time * 1000,
+                "has_citations": has_citations(result),
+                "agent_mode": "Planning-then-Execution",
+                "evaluation_mode": True
+            },
+            video_info=None
+        )
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"[Evaluate] 处理请求时出错: {error_msg}", exc_info=True)
+        return AgentResponse(
+            success=False,
+            response=f"评估处理失败: {error_msg}",
+            processing_time=time.time() - start_time,
+            metadata={
+                "error": error_msg,
+                "evaluation_mode": True
+            },
+            video_info=None
+        )
+
+
 @router.websocket("/ws/chat")
 async def chat_with_agent_websocket(websocket: WebSocket):
     """

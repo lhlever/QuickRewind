@@ -56,7 +56,7 @@ export const apiService = {
     getVideoInfo: async (videoId) => {
       console.log(`正在获取视频信息: ${videoId}`);
       try {
-        const response = await request(`/v1/videos/${videoId}`);
+        const response = await request(`/api/v1/videos/${videoId}`);
         console.log(`成功获取视频信息:`, response);
         return response;
       } catch (error) {
@@ -68,7 +68,7 @@ export const apiService = {
     getOutline: async (videoId) => {
       console.log(`正在获取视频大纲: ${videoId}`);
       try {
-        const response = await request(`/v1/videos/${videoId}/outline`);
+        const response = await request(`/api/v1/videos/${videoId}/outline`);
         console.log(`成功获取视频大纲:`, response);
         return response;
       } catch (error) {
@@ -80,7 +80,7 @@ export const apiService = {
     // 搜索视频 - 返回完整的响应对象，包含message和videos字段
     search: async (query) => {
       try {
-        const response = await request('/v1/videos/search', {
+        const response = await request('/api/v1/videos/search', {
           method: 'POST',
           body: JSON.stringify({ query }),
         });
@@ -202,7 +202,7 @@ export const apiService = {
           reject(new Error('Network error during upload'));
         });
         
-        xhr.open('POST', `${API_BASE_URL}/v1/videos/upload`);
+        xhr.open('POST', `${API_BASE_URL}/api/v1/videos/upload`);
         
         // 添加认证token到请求头
         const token = localStorage.getItem('token');
@@ -213,20 +213,20 @@ export const apiService = {
         xhr.send(formData);
       });
     },
-    
+
     // 获取视频详情
-    getDetails: (videoId) => request(`/v1/videos/${videoId}`),
-    
+    getDetails: (videoId) => request(`/api/v1/videos/${videoId}`),
+
     // 获取视频大纲
-    getOutline: (videoId) => request(`/v1/videos/${videoId}/outline`),
-    
+    getOutline: (videoId) => request(`/api/v1/videos/${videoId}/outline`),
+
     // 获取视频处理状态
-    getStatus: (videoId) => request(`/v1/videos/${videoId}/status`),
-    
+    getStatus: (videoId) => request(`/api/v1/videos/${videoId}/status`),
+
     // 获取用户视频列表
     getUserVideos: (skip = 0, limit = 20) => {
       const token = localStorage.getItem('token');
-      return request(`/v1/videos/user/videos?skip=${skip}&limit=${limit}`, {
+      return request(`/api/v1/videos/user/videos?skip=${skip}&limit=${limit}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -250,7 +250,7 @@ export const apiService = {
 
       try {
         const token = localStorage.getItem('token');
-        const response = await fetch(`${API_BASE_URL}/v1/agent/chat/stream`, {
+        const response = await fetch(`${API_BASE_URL}/api/v1/agent/chat/stream`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -319,7 +319,7 @@ export const apiService = {
         } = callbacks;
 
         const token = localStorage.getItem('token');
-        const url = `${API_BASE_URL}/v1/agent/chat/stream`;
+        const url = `${API_BASE_URL}/api/v1/agent/chat/stream`;
 
         const xhr = new XMLHttpRequest();
         xhr.open('POST', url, true);
@@ -435,7 +435,7 @@ export const apiService = {
     },
 
     // 基于视频内容提问
-    askAboutVideo: (videoId, question) => request('/v1/agent/video-query', {
+    askAboutVideo: (videoId, question) => request('/api/v1/agent/video-query', {
       method: 'POST',
       body: JSON.stringify({ video_id: videoId, question }),
     }),
@@ -459,7 +459,7 @@ export const apiService = {
         } = callbacks;
 
         const token = localStorage.getItem('token');
-        const wsUrl = `ws://localhost:8000/v1/agent/ws/chat`;
+        const wsUrl = `ws://localhost:8000/api/v1/agent/ws/chat`;
 
         const ws = new WebSocket(wsUrl);
 
@@ -558,27 +558,27 @@ export const apiService = {
     getUsers: (params = '') => {
       // 从localStorage获取token
       const token = localStorage.getItem('token');
-      return request(`/v1/users${params}`, {
+      return request(`/api/v1/users${params}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
     },
-    
+
     // 获取用户详情
     getUser: (userId) => {
       const token = localStorage.getItem('token');
-      return request(`/v1/users/${userId}`, {
+      return request(`/api/v1/users/${userId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
     },
-    
+
     // 创建用户
     createUser: (userData) => {
       const token = localStorage.getItem('token');
-      return request('/v1/users/', {
+      return request('/api/v1/users/', {
         method: 'POST',
         body: JSON.stringify(userData),
         headers: {
@@ -586,11 +586,11 @@ export const apiService = {
         }
       });
     },
-    
+
     // 更新用户
     updateUser: (userId, userData) => {
       const token = localStorage.getItem('token');
-      return request(`/v1/users/${userId}`, {
+      return request(`/api/v1/users/${userId}`, {
         method: 'PUT',
         body: JSON.stringify(userData),
         headers: {
@@ -598,22 +598,22 @@ export const apiService = {
         }
       });
     },
-    
+
     // 删除用户
     deleteUser: (userId) => {
       const token = localStorage.getItem('token');
-      return request(`/v1/users/${userId}`, {
+      return request(`/api/v1/users/${userId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
     },
-    
+
     // 切换用户状态
     toggleUserStatus: (userId, isActive) => {
       const token = localStorage.getItem('token');
-      return request(`/v1/users/${userId}/status`, {
+      return request(`/api/v1/users/${userId}/status`, {
         method: 'PUT',
         body: JSON.stringify({ is_active: isActive }),
         headers: {
@@ -621,11 +621,11 @@ export const apiService = {
         }
       });
     },
-    
+
     // 切换用户角色
     toggleUserRole: (userId, isAdmin) => {
       const token = localStorage.getItem('token');
-      return request(`/v1/users/${userId}/role`, {
+      return request(`/api/v1/users/${userId}/role`, {
         method: 'PUT',
         body: JSON.stringify({ is_superuser: isAdmin }),
         headers: {

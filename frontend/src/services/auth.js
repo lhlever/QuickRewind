@@ -46,7 +46,7 @@ export const authService = {
   // 用户登录
   login: async (username, password) => {
     try {
-      const response = await request('/v1/auth/login/json', {
+      const response = await request('/api/v1/auth/login/json', {
         method: 'POST',
         body: JSON.stringify({ username, password }),
       });
@@ -60,7 +60,7 @@ export const authService = {
   // 用户注册
   register: async (userData) => {
     try {
-      const response = await request('/v1/auth/register', {
+      const response = await request('/api/v1/auth/register', {
         method: 'POST',
         body: JSON.stringify(userData),
       });
@@ -74,7 +74,7 @@ export const authService = {
   // 获取当前用户信息
   getCurrentUser: async () => {
     try {
-      const response = await request('/v1/auth/me');
+      const response = await request('/api/v1/auth/me');
       return response;
     } catch (error) {
       console.error('获取用户信息失败:', error);
@@ -85,7 +85,7 @@ export const authService = {
   // 用户登出
   logout: async () => {
     try {
-      const response = await request('/v1/auth/logout', {
+      const response = await request('/api/v1/auth/logout', {
         method: 'POST',
       });
       return response;

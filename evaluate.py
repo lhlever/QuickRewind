@@ -15,6 +15,7 @@ import sys
 # API配置
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 AGENT_CHAT_URL = f"{API_BASE_URL}/api/v1/agent/chat"
+AGENT_EVALUATE_URL = f"{API_BASE_URL}/api/v1/agent/evaluate"  # 专用评估接口
 
 
 def load_test_cases() -> List[Dict[str, Any]]:
@@ -74,13 +75,14 @@ def extract_citations(answer: str) -> int:
     return citations
 
 
-def call_agent_api(question: str, use_mock: bool = False) -> Dict[str, Any]:
+def call_agent_api(question: str, use_mock: bool = False, use_evaluate_endpoint: bool = True) -> Dict[str, Any]:
     """
     调用Agent API进行问答
 
     Args:
         question: 用户问题
         use_mock: 是否使用模拟数据（用于测试）
+        use_evaluate_endpoint: 是否使用专用评估接口（默认True）
 
     Returns:
         包含答案和元数据的字典
@@ -112,11 +114,14 @@ def call_agent_api(question: str, use_mock: bool = False) -> Dict[str, Any]:
     # 真实API调用
     start_time = time.time()
 
+    # 选择使用评估接口或普通聊天接口
+    api_url = AGENT_EVALUATE_URL if use_evaluate_endpoint else AGENT_CHAT_URL
+
     try:
         response = requests.post(
-            AGENT_CHAT_URL,
+            api_url,
             json={"message": question},
-            timeout=60
+            timeout=600
         )
 
         latency_ms = (time.time() - start_time) * 1000
@@ -125,17 +130,28 @@ def call_agent_api(question: str, use_mock: bool = False) -> Dict[str, Any]:
             data = response.json()
             answer = data.get("response", "")
 
-            # 尝试从metadata中获取token信息
+            # 从metadata中获取详细信息
             metadata = data.get("metadata", {})
-            tokens = metadata.get("response_length", len(answer.split()))
+
+            # 优先使用API返回的token信息
+            tokens = metadata.get("total_tokens",
+                                 metadata.get("response_length", len(answer.split())))
+
+            # 优先使用API返回的延迟信息
+            api_latency = metadata.get("latency_ms", latency_ms)
+
+            # 检查引用
+            has_citations = metadata.get("has_citations", extract_citations(answer) > 0)
 
             return {
                 "answer": answer,
                 "metadata": {
-                    "latency_ms": latency_ms,
+                    "latency_ms": api_latency,
                     "total_tokens": tokens,
                     "processing_time": data.get("processing_time", 0),
-                    "has_citations": extract_citations(answer) > 0
+                    "has_citations": has_citations,
+                    "question_tokens": metadata.get("question_tokens", 0),
+                    "answer_tokens": metadata.get("answer_tokens", 0)
                 }
             }
         else:
@@ -213,8 +229,8 @@ def evaluate_system(
     total_cases = len(test_cases)
 
     print(f"\n开始评测，共 {total_cases} 个测试用例...")
-    print(f"API地址: {AGENT_CHAT_URL}")
-    print(f"模式: {'模拟数据' if use_mock else '真实API调用'}\n")
+    print(f"API地址: {AGENT_EVALUATE_URL if not use_mock else '模拟模式'}")
+    print(f"模式: {'模拟数据' if use_mock else '真实API调用（评估接口）'}\n")
 
     # 用于统计
     successful_cases = 0

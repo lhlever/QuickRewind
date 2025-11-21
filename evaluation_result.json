@@ -1,17 +1,27 @@
 {
-  "accuracy": 0.36,
-  "avg_latency_ms": 1925,
-  "avg_tokens": 418,
-  "cost_per_query": 0.0033,
-  "citation_accuracy": 0.4,
-  "total_cases": 5,
-  "successful_cases": 5,
+  "accuracy": 0.22,
+  "avg_latency_ms": 1660,
+  "avg_tokens": 505,
+  "cost_per_query": 0.004,
+  "citation_accuracy": 0.47,
+  "total_cases": 30,
+  "successful_cases": 30,
   "failed_cases": 0,
   "difficulty_breakdown": {
     "easy": {
+      "count": 15,
+      "avg_accuracy": 0.32,
+      "avg_latency_ms": 1857.0065554640853
+    },
+    "medium": {
+      "count": 10,
+      "avg_accuracy": 0.125,
+      "avg_latency_ms": 1424.7186218678205
+    },
+    "hard": {
       "count": 5,
-      "avg_accuracy": 0.36,
-      "avg_latency_ms": 1925.1981725255296
+      "avg_accuracy": 0.10666666666666666,
+      "avg_latency_ms": 1539.6383610599073
     }
   }
 }
