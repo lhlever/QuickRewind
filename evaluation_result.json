@@ -1,0 +1,17 @@
+{
+  "accuracy": 0.36,
+  "avg_latency_ms": 1925,
+  "avg_tokens": 418,
+  "cost_per_query": 0.0033,
+  "citation_accuracy": 0.4,
+  "total_cases": 5,
+  "successful_cases": 5,
+  "failed_cases": 0,
+  "difficulty_breakdown": {
+    "easy": {
+      "count": 5,
+      "avg_accuracy": 0.36,
+      "avg_latency_ms": 1925.1981725255296
+    }
+  }
+}
