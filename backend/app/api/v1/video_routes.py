@@ -345,6 +345,7 @@ def _process_video_task(video_id: str, db: Session):
                             vectors.append(np.array(embedding))
                             metadata.append({
                                 "video_id": video_id,
+                                "user_id": video.user_id,  # 添加用户ID
                                 "content_type": "subtitle_segment",
                                 "content": text,
                                 "start_time": float(segment.get('start_time', 0.0)),
@@ -924,6 +925,7 @@ async def get_user_videos(
             video_list.append(video_data)
         
         logger.info(f"成功获取用户 {current_user.username} 的视频列表，共 {len(video_list)} 个视频")
+        print(video_list)
         return video_list
         
     except Exception as e:

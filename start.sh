@@ -58,7 +58,7 @@ start_backend() {
     
     # 启动后端服务
     echo "🚀 启动 FastAPI 服务 (端口: 8000)..."
-    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --no-buffer &
+    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
     BACKEND_PID=$!
     echo "✅ 后端服务已启动 (PID: $BACKEND_PID)"
     

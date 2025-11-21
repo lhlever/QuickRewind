@@ -65,11 +65,12 @@ class MilvusManager:
         """确保集合存在，如果不存在则创建"""
         if not utility.has_collection(settings.milvus_collection_name):
             logger.info(f"创建Milvus集合: {settings.milvus_collection_name}")
-            
+
             # 定义字段
             fields = [
                 FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
                 FieldSchema(name="video_id", dtype=DataType.VARCHAR, max_length=64, description="视频ID"),
+                FieldSchema(name="user_id", dtype=DataType.VARCHAR, max_length=64, description="用户ID"),
                 FieldSchema(name="content_type", dtype=DataType.VARCHAR, max_length=32, description="内容类型"),
                 FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=2048, description="文本内容"),
                 FieldSchema(name="start_time", dtype=DataType.FLOAT, description="开始时间（秒）"),
@@ -109,21 +110,22 @@ class MilvusManager:
     
     def insert_vectors(self, vectors: List[np.ndarray], metadata: List[Dict[str, Any]]) -> List[int]:
         """插入向量数据
-        
+
         Args:
             vectors: 向量列表
-            metadata: 元数据列表，每个元数据包含video_id, content_type, content等字段
-            
+            metadata: 元数据列表，每个元数据包含video_id, user_id, content_type, content等字段
+
         Returns:
             插入的ID列表
         """
         if not self.is_connected:
             self.connect()
-        
+
         # 准备数据 - 按照字段顺序准备数据
         video_ids = [m["video_id"] for m in metadata]
+        user_ids = [m.get("user_id", "") for m in metadata]  # 获取user_id，如果没有则为空字符串
         content_types = [m.get("content_type", "transcript") for m in metadata]
-        
+
         # 对content进行截断，确保不超过2048字符的限制
         contents = []
         for m in metadata:
@@ -133,15 +135,16 @@ class MilvusManager:
                 # 截断并添加省略号
                 content = content[:2045] + "..."
             contents.append(content)
-            
+
         start_times = [m.get("start_time", 0.0) for m in metadata]
         end_times = [m.get("end_time", 0.0) for m in metadata]
-        
+
         # 插入数据 - 按照创建schema时的字段顺序（除了id字段）
         try:
-            # 按照schema定义的顺序准备数据：video_id, content_type, content, start_time, end_time, vector
+            # 按照schema定义的顺序准备数据：video_id, user_id, content_type, content, start_time, end_time, vector
             result = self.collection.insert([
                 video_ids,
+                user_ids,
                 content_types,
                 contents,
                 start_times,
@@ -155,49 +158,52 @@ class MilvusManager:
             logger.error(f"插入向量失败: {str(e)}")
             raise
     
-    def search_vectors(self, query_vector: np.ndarray, top_k: int = 1, 
+    def search_vectors(self, query_vector: np.ndarray, top_k: int = 1,
                       filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """搜索相似向量
-        
+
         Args:
             query_vector: 查询向量
             top_k: 返回结果数量，必须大于0
-            filters: 过滤条件
-            
+            filters: 过滤条件，可以包含 user_id, video_id, content_type 等
+
         Returns:
             搜索结果列表
         """
         if not self.is_connected:
             self.connect()
-        
+
         # 确保top_k是有效的正整数
         if not isinstance(top_k, int) or top_k <= 0:
             top_k = 1
             logger.warning(f"无效的top_k值: {top_k}，已设置为默认值1")
-        
+
         # 加载集合
         self.collection.load()
-        
+
         # 设置搜索参数
         search_params = {
             "metric_type": "L2",
             "params": {"nprobe": 10}
         }
-        
+
         # 构建表达式
         expr = None
         if filters:
             conditions = []
+            if "user_id" in filters:
+                conditions.append(f"user_id == '{filters['user_id']}'")
             if "video_id" in filters:
                 conditions.append(f"video_id == '{filters['video_id']}'")
             if "content_type" in filters:
                 conditions.append(f"content_type == '{filters['content_type']}'")
             if "start_time" in filters and "end_time" in filters:
                 conditions.append(f"start_time >= {filters['start_time']} && end_time <= {filters['end_time']}")
-            
+
             if conditions:
                 expr = " && ".join(conditions)
-        
+                logger.info(f"搜索过滤条件: {expr}")
+
         # 执行搜索
         try:
             results = self.collection.search(
@@ -206,9 +212,9 @@ class MilvusManager:
                 param=search_params,
                 limit=top_k,
                 expr=expr,
-                output_fields=["video_id", "content_type", "content", "start_time", "end_time"]
+                output_fields=["video_id", "user_id", "content_type", "content", "start_time", "end_time"]
             )
-            
+
             # 处理结果
             search_results = []
             for hit in results[0]:
@@ -216,12 +222,13 @@ class MilvusManager:
                     "id": hit.id,
                     "distance": hit.distance,
                     "video_id": hit.entity.get("video_id"),
+                    "user_id": hit.entity.get("user_id"),
                     "content_type": hit.entity.get("content_type"),
                     "content": hit.entity.get("content"),
                     "start_time": hit.entity.get("start_time"),
                     "end_time": hit.entity.get("end_time")
                 })
-            
+
             logger.info(f"搜索完成，返回 {len(search_results)} 个结果")
             return search_results
         except Exception as e:

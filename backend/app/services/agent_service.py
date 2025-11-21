@@ -193,24 +193,134 @@ class VolcLLMWrapper:
 class Agent:
     """
     基于LangChain的AI Agent实现
-    
+
     负责解析用户请求，选择合适的工具，调用工具并处理结果，最终生成响应。
     """
-    
+
+    # 统一的系统提示词模板 - 所有执行器共享
+    SYSTEM_PROMPT_TEMPLATE = """
+你是{agent_name}，一个{agent_role}。
+
+你需要按照以下Planning-then-Execution模式来处理用户的请求：
+
+## Planning阶段（规划阶段）
+1. 分析用户问题和可用工具
+2. 制定详细的执行计划，明确每个步骤的目标和方法
+3. 确保计划完整、逻辑清晰且可执行
+4. 特别注意：当问题涉及视频内容搜索、查询或分析时，必须使用video相关工具
+
+## Execution阶段（执行阶段）
+1. 严格按照制定的计划逐步执行每个步骤
+2. 对每个步骤调用相应的工具或直接处理
+3. 记录每个步骤的执行结果
+4. 根据执行结果决定是否需要调整计划
+5. 执行完毕后，总结整个过程并提供最终答案
+
+
+可用工具列表：
+{tools_info}
+
+## 输出格式要求
+
+### Planning阶段输出格式：
+
+Plan:
+1. [第一步计划] - [预期工具/方法]
+2. [第二步计划] - [预期工具/方法]
+3. [更多步骤...] - [预期工具/方法]
+
+Reasoning: [为什么这样规划，简要说明逻辑]
+
+
+### 下面是针对用户视频搜索任务的特别说明，如果非视频搜索功能则无需关注
+  - 对于任何与视频、视频内容、视频搜索相关的查询，必须强制使用search_video_by_vector工具
+  - 对于包含查询、寻找、查找、检索、搜索、想知道、了解、查询等意图的用户问题，必须使用search_video_by_vector工具
+  - **必须**将用户的原始查询词作为query参数值直接传递，不要修改、替换或解释用户的查询词
+  - 不要使用系统提示、指令模板、或其他与用户原始查询无关的词语作为搜索关键词
+  - 只能使用用户在当前对话中明确输入的查询文本作为search_video_by_vector工具的query参数值
+  - 可以根据需要设置top_k参数控制返回结果数量，建议设置为5-10
+  - 注意：如果用户的输入中包含明确的查询内容，请直接使用这些内容作为query参数值，不要要求用户重复提供查询词
+
+### Execution阶段输出格式（每个步骤）：
+
+Step: {{step_number}}. [当前步骤描述]
+Action: [调用工具的格式或直接回答]
+   - 工具调用格式: tool_name(参数1=值1, 参数2=值2)
+   - 直接回答格式: Direct[回答内容]
+Result: [工具执行结果或直接回答的确认]
+
+### 最终输出格式：
+
+Execution Complete: [执行完成的状态描述]
+Final Answer: [对用户问题的最终回答]
+
+### 文本信息返回格式：
+对于回答中的文本，要返回成对用户友好的文本段落
+
+### 视频信息返回格式（重要）：
+**视频一定是经过搜索工具返回的，不要胡编乱造视频，不要自己拟合视频信息**
+
+当你使用 search_video_by_vector 工具搜索视频后，工具会返回如下格式的数据：
+{{
+    "is_matched": true/false,
+    "videos": [
+        {{
+            "video_id": "视频ID",
+            "title": "视频标题",
+            "thumbnail": "缩略图URL",
+            "video_link": "视频链接",
+            "relevance_score": 相关度分数（数字，0-100之间）,
+            "matched_subtitles": "匹配的字幕内容文本"
+        }}
+    ]
+}}
+
+注意：matched_subtitles 字段包含了与查询最相关的字幕片段，你必须在最终的 <video_info> 中包含这个字段。
+
+**重要**：你必须从工具返回的 videos 数组中提取视频信息，然后在最终回答中使用以下格式返回：
+<video_info>
+[
+    {{
+        "video_id": "从工具结果中获取的video_id",
+        "title": "从工具结果中获取的title",
+        "thumbnail": "从工具结果中获取的thumbnail",
+        "video_link": "从工具结果中获取的video_link",
+        "relevance_score": 从工具结果中获取的relevance_score（数字，不要加引号）,
+        "matched_subtitles": "从工具结果中获取的matched_subtitles（匹配的字幕内容）"
+    }}
+]
+</video_info>
+
+请将所有视频信息严格按照上述格式放置在<video_info>标签内，不要修改格式。
+如果工具返回的 is_matched 为 false 或 videos 数组为空，请不要包含<video_info>标签。
+"""
+
     def __init__(self, config: Optional[AgentConfig] = None):
         """
         初始化Agent
-        
+
         Args:
             config: Agent配置
         """
         self.config = config or AgentConfig()
         self.logger = logger.getChild(f"agent.{self.config.name}")
-        
+
+        # 生成系统提示词
+        self.system_prompt = self._generate_system_prompt()
+
         # 初始化Agent执行器
         self.agent_executor = self._create_agent_executor()
-        
+
         self.logger.info(f"Simplified Agent initialized: {self.config.name}")
+
+    def _generate_system_prompt(self) -> str:
+        """生成系统提示词"""
+        tools_info = get_available_tools_info()
+        return self.SYSTEM_PROMPT_TEMPLATE.format(
+            agent_name=self.config.name,
+            agent_role=self.config.role,
+            tools_info=tools_info
+        )
     
     def _create_agent_executor(self) -> object:
         """
@@ -243,12 +353,12 @@ class Agent:
                             # 使用同步方式调用异步的MCP工具
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
-                            
+
                             tool_call = ToolCall(
                                 tool_name=getattr(tool_obj, 'name', 'unknown_tool'),
                                 parameters=kwargs
                             )
-                            
+
                             # 同步运行异步函数
                             result = loop.run_until_complete(
                                 mcp_server.call_tool_async(
@@ -263,7 +373,7 @@ class Agent:
                         finally:
                             loop.close()
                     return tool_function
-                    
+
                 # 为当前工具创建特定的函数
                 create_tool_function = create_tool_wrapper(tool)
                 
@@ -275,84 +385,8 @@ class Agent:
                 langchain_tools.append(create_tool_function)
                 tool_map[tool_name] = tool
             
-            # 创建系统提示 - Planning-then-Execution模式提示词
-            planning_execution_prompt = f"""
-            你是{self.config.name}，一个{self.config.role}。
-            
-            你需要按照以下Planning-then-Execution模式来处理用户的请求：
-            
-            ## Planning阶段（规划阶段）
-            1. 分析用户问题和可用工具
-            2. 制定详细的执行计划，明确每个步骤的目标和方法
-            3. 确保计划完整、逻辑清晰且可执行
-            4. 特别注意：当问题涉及视频内容搜索、查询或分析时，必须使用video相关工具
-            
-            ## Execution阶段（执行阶段）
-            1. 严格按照制定的计划逐步执行每个步骤
-            2. 对每个步骤调用相应的工具或直接处理
-            3. 记录每个步骤的执行结果
-            4. 根据执行结果决定是否需要调整计划
-            5. 执行完毕后，总结整个过程并提供最终答案
-            
-            ## 重要提示：工具使用原则
-            - 当需要获取外部信息、执行特定操作、查询数据时，必须使用相应工具
-            - 只有当你确定已有足够信息直接回答用户问题时，才使用Direct回答格式
-            - 请优先考虑使用工具来获取准确、最新的信息
-            - 对于视频相关查询，必须使用search_video_by_vector工具进行向量搜索
-            
-            可用工具列表：
-            {get_available_tools_info()}
-            
-            ## 输出格式要求
-            
-            ### Planning阶段输出格式：
-            
-            Plan:
-            1. [第一步计划] - [预期工具/方法]
-            2. [第二步计划] - [预期工具/方法]
-            3. [更多步骤...] - [预期工具/方法]
-            
-            Reasoning: [为什么这样规划，简要说明逻辑]
-            
-            ### 特别说明：视频搜索工具强制使用指南
-              - 对于任何与视频、视频内容、视频搜索相关的查询，必须强制使用search_video_by_vector工具
-              - 对于包含查询、寻找、查找、检索、搜索、想知道、了解、查询等意图的用户问题，必须使用search_video_by_vector工具
-              - **必须**将用户的原始查询词作为query参数值直接传递，不要修改、替换或解释用户的查询词
-              - 不要使用系统提示、指令模板、或其他与用户原始查询无关的词语作为搜索关键词
-              - 只能使用用户在当前对话中明确输入的查询文本作为search_video_by_vector工具的query参数值
-              - 可以根据需要设置top_k参数控制返回结果数量，建议设置为5-10
-              - 注意：如果用户的输入中包含明确的查询内容，请直接使用这些内容作为query参数值，不要要求用户重复提供查询词
-            
-            ### Execution阶段输出格式（每个步骤）：
-            
-            Step: {step_number}. [当前步骤描述]
-            Action: [调用工具的格式或直接回答]
-               - 工具调用格式: tool_name(参数1=值1, 参数2=值2)
-               - 直接回答格式: Direct[回答内容]
-            Result: [工具执行结果或直接回答的确认]
-            
-            ### 最终输出格式：
-            
-            Execution Complete: [执行完成的状态描述]
-            Final Answer: [对用户问题的最终回答]
-            
-            ### 视频信息返回格式（重要）：
-            如果您在回答中涉及到视频信息，请在最终回答中使用以下格式返回视频信息列表：
-            <video_info>
-            [
-                {
-                    "video_id": "视频ID",
-                    "title": "视频标题",
-                    "thumbnail": "缩略图URL",
-                    "video_link": "视频链接",
-                    "relevance_score": "相关度分数"
-                }
-            ]
-            </video_info>
-            
-            请将所有视频信息严格按照上述格式放置在<video_info>标签内，不要修改格式。
-            如果没有视频信息，请不要包含<video_info>标签。
-            """
+            # 使用统一的系统提示词
+            planning_execution_prompt = self.system_prompt
             
             # 初始化LLM包装器
             llm = VolcLLMWrapper(temperature=self.config.temperature)
@@ -377,10 +411,17 @@ class Agent:
                     self.logger.info(f"[ainvoke] 被调用, user_input={user_input[:50]}...")
                     self.logger.info(f"[ainvoke] stream_callback 是否存在: {stream_callback is not None}")
 
+                    # 从 user_input 中提取 user_id
+                    import re
+                    user_id_match = re.search(r'当前用户ID:\s*([a-zA-Z0-9_-]+)', user_input)
+                    extracted_user_id = user_id_match.group(1) if user_id_match else None
+                    if extracted_user_id:
+                        self.logger.info(f"[Planning] 从输入中提取到用户ID: {extracted_user_id}")
+
                     # 初始化对话历史和执行状态
                     dialog_history = chat_history.copy()
                     dialog_history.append({"role": "user", "content": user_input})
-                    self.execution_state = {"plan": [], "results": {}, "current_step": 0}
+                    self.execution_state = {"plan": [], "results": {}, "current_step": 0, "user_id": extracted_user_id}
 
                     try:
                         # ======== Planning阶段 ========
@@ -556,13 +597,11 @@ class Agent:
                             self.execution_state["results"][step_num] = direct_answer
                             self.logger.info(f"[Planning-then-Execution模式] 步骤 {step_num} 直接回答: {direct_answer}")
 
-                            # 发送步骤完成事件
+                            # 发送步骤完成事件（不包含执行细节）
                             if stream_callback:
                                 await stream_callback({
                                     "type": "step_complete",
-                                    "step_number": step_num,
-                                    "action": "Direct Answer",
-                                    "result": direct_answer
+                                    "step_number": step_num
                                 })
 
                             # 添加直接回答的原因记录，便于调试
@@ -583,13 +622,11 @@ class Agent:
                             execution_history.append(f"Result: {tool_result}")
                             self.execution_state["results"][step_num] = tool_result
 
-                            # 发送步骤完成事件
+                            # 发送步骤完成事件（不包含执行细节）
                             if stream_callback:
                                 await stream_callback({
                                     "type": "step_complete",
-                                    "step_number": step_num,
-                                    "action": action,
-                                    "result": tool_result
+                                    "step_number": step_num
                                 })
 
                             # 添加更详细的日志，便于调试
@@ -634,41 +671,75 @@ class Agent:
                     return final_answer
                     
                 def _extract_final_answer(self, response):
-                    """提取最终答案"""
-                    print("="*100)
-                    print("原始响应:", response)
-                    print("="*100)
+                    """提取最终答案并过滤内部标记"""
+                    import re
+
                     try:
-                        # 检查多种可能的最终答案格式
+                        final_answer = response
+
+                        # 步骤1: 尝试提取 Final Answer: 后面的内容
                         if "Final Answer:" in response:
                             answer_start = response.index("Final Answer:") + len("Final Answer:")
-                            # 找到下一个可能的部分开始位置或文本结束
-                            next_section_start = min(
-                                response.find("\n\n", answer_start) if "\n\n" in response[answer_start:] else len(response),
-                                len(response)
-                            )
-                            final_answer = response[answer_start:next_section_start].strip()
-                            return final_answer
+                            final_answer = response[answer_start:].strip()
                         elif "Execution Complete:" in response:
-                            # 尝试从执行完成后的内容提取
-                            complete_start = response.index("Execution Complete:")
                             # 从执行完成后查找可能的答案
-                            potential_answer = response[complete_start:].strip()
-                            # 如果包含Final Answer，再次提取
+                            complete_start = response.index("Execution Complete:")
+                            potential_answer = response[complete_start + len("Execution Complete:"):].strip()
+                            # 如果还包含Final Answer，再次提取
                             if "Final Answer:" in potential_answer:
                                 return self._extract_final_answer(potential_answer)
-                            return potential_answer
+                            final_answer = potential_answer
                         elif "Finish[" in response and "]" in response:
                             # 兼容旧格式
                             finish_start = response.index("Finish[") + 7
                             finish_end = response.rfind("]")
                             if finish_start < finish_end:
-                                return response[finish_start:finish_end].strip()
+                                final_answer = response[finish_start:finish_end].strip()
+
+                        # 步骤2: 过滤掉所有内部过程标记
+                        # 移除 Plan: 段落
+                        final_answer = re.sub(r'Plan:\s*\n(.*?)\n\n', '', final_answer, flags=re.DOTALL)
+                        final_answer = re.sub(r'Plan:.*?(?=\n\n|\Z)', '', final_answer, flags=re.DOTALL)
+
+                        # 移除 Reasoning: 段落
+                        final_answer = re.sub(r'Reasoning:\s*\n(.*?)\n\n', '', final_answer, flags=re.DOTALL)
+                        final_answer = re.sub(r'Reasoning:.*?(?=\n\n|\Z)', '', final_answer, flags=re.DOTALL)
+
+                        # 移除 Step: ... Action: ... Result: ... 这样的执行过程（增强版）
+                        # 移除以 Step: 开头的整行
+                        final_answer = re.sub(r'^Step:\s*.*$', '', final_answer, flags=re.MULTILINE)
+                        final_answer = re.sub(r'\nStep:\s*.*$', '', final_answer, flags=re.MULTILINE)
+
+                        # 移除以 Action: 开头的整行
+                        final_answer = re.sub(r'^Action:\s*.*$', '', final_answer, flags=re.MULTILINE)
+                        final_answer = re.sub(r'\nAction:\s*.*$', '', final_answer, flags=re.MULTILINE)
+
+                        # 移除以 Result: 开头的整行
+                        final_answer = re.sub(r'^Result:\s*.*$', '', final_answer, flags=re.MULTILINE)
+                        final_answer = re.sub(r'\nResult:\s*.*$', '', final_answer, flags=re.MULTILINE)
+
+                        # 移除 Execution Complete: 标记本身
+                        final_answer = re.sub(r'Execution Complete:.*?\n', '', final_answer)
+                        final_answer = re.sub(r'^Execution Complete:\s*.*$', '', final_answer, flags=re.MULTILINE)
+
+                        # 移除 Final Answer: 标记本身（如果还有残留）
+                        final_answer = re.sub(r'^Final Answer:\s*', '', final_answer)
+                        final_answer = re.sub(r'\nFinal Answer:\s*', '\n', final_answer)
+
+                        # 步骤3: 清理多余的空白
+                        final_answer = final_answer.strip()
+
+                        # 步骤4: 如果过滤后内容为空，返回一个友好的默认消息
+                        if not final_answer:
+                            self.logger.warning("[Planning-then-Execution模式] 过滤后内容为空")
+                            return "处理完成"
+
+                        return final_answer
+
                     except Exception as e:
                         self.logger.error(f"[Planning-then-Execution模式] 提取最终答案失败: {str(e)}")
-                    
-                    # 如果无法提取特定格式，返回完整响应
-                    return response
+                        # 发生错误时，尝试至少返回一些内容
+                        return response.split("Final Answer:")[-1].strip() if "Final Answer:" in response else response
                     
                 def _parse_plan_with_reasoning(self, response):
                     """解析LLM生成的计划，提取步骤列表和推理过程"""
@@ -766,11 +837,18 @@ class Agent:
                             
                             # 解析参数 - 增强版，支持更复杂的参数格式
                             params = self._parse_complex_params(params_str)
-                            
+
+                            # 如果是 search_video_by_vector 工具且没有 user_id 参数，自动注入
+                            if tool_name == "search_video_by_vector" and "user_id" not in params:
+                                extracted_user_id = self.execution_state.get("user_id")
+                                if extracted_user_id:
+                                    params["user_id"] = extracted_user_id
+                                    self.logger.info(f"[Planning-工具调用] 自动注入 user_id: {extracted_user_id}")
+
                             # 记录执行状态
                             self.execution_state["current_tool"] = tool_name
                             self.execution_state["current_params"] = params
-                            
+
                             # 创建工具调用
                             tool_call = ToolCall(
                                 tool_name=tool_name,
@@ -890,53 +968,19 @@ class Agent:
                     self.logger.info(f"[Fallback ainvoke] 被调用, user_input={user_input[:50]}...")
                     self.logger.info(f"[Fallback ainvoke] stream_callback 是否存在: {stream_callback is not None}")
 
-                    # 准备增强的Planning-then-Execution模式系统提示
-                    system_prompt = f"""
-                    你是系统号尾数为1437的{self.config.name}，一个{self.config.role}。
-                    
-                    请按照Planning-then-Execution模式思考并回答问题：
-                    1. 首先制定简单的执行计划（Planning阶段）
-                    2. 然后执行计划并给出最终答案（Execution阶段）
-                    
-                    ## 重要提示：工具使用原则
-                    - 当需要获取外部信息、执行特定操作、查询数据时，必须使用相应工具
-                    - 只有当你确定已有足够信息直接回答用户问题时，才使用直接回答
-                    - 请优先考虑使用工具来获取准确、最新的信息
-                    - 对于视频相关查询，必须使用search_video_by_vector工具进行向量搜索
-                    - **必须**将用户的原始查询词作为query参数值直接传递，不要修改、替换或解释用户的查询词
-                    - 不要使用系统提示、指令模板、或其他与用户原始查询无关的词语作为搜索关键词
-                    - 只能使用用户在当前对话中明确输入的查询文本作为search_video_by_vector工具的query参数值
-                    
-                    可用工具列表：
-                    {self.tools_info}
-                    
-                    请严格按照以下格式输出：
-                    Plan:
-                    1. [第一步计划] - [预期工具/方法]
-                    2. [第二步计划] - [预期工具/方法]
-                    
-                    Reasoning: [为什么这样规划，简要说明逻辑]
-                    
-                    ### 特别说明：视频搜索工具强制使用指南
-                    - 对于任何与视频、视频内容、视频搜索相关的查询，必须强制使用search_video_by_vector工具
-                    - 对于包含查询、寻找、查找、检索、搜索、想知道、了解、查询等意图的用户问题，必须使用search_video_by_vector工具
-                    - **必须**将用户的原始查询词作为query参数值直接传递，不要修改、替换或解释用户的查询词
-                    - 不要使用系统提示、指令模板、或其他与用户原始查询无关的词语作为搜索关键词
-                    - 只能使用用户在当前对话中明确输入的查询文本作为search_video_by_vector工具的query参数值
-                    - 可以根据需要设置top_k参数控制返回结果数量，建议设置为5-10
-                    - 注意：如果用户的输入中包含明确的查询内容，请直接使用这些内容作为query参数值，不要要求用户重复提供查询词
-                    
-                    ## 视频信息返回格式（重要）：
-                    如果您在回答中涉及到视频信息，请在最终回答中使用以下格式返回视频信息列表：
-                    <video_info>
-                    [
-                        {{{{"video_id": "视频ID", "title": "视频标题", "thumbnail": "缩略图URL", "video_link": "视频链接", "relevance_score": 相关度分数}}}}
-                    ]
-                    </video_info>
-                    
-                    请将所有视频信息严格按照上述格式放置在<video_info>标签内，不要修改格式。
-                    如果没有视频信息，请不要包含<video_info>标签。
-                    """
+                    # 从 user_input 中提取 user_id
+                    import re
+                    user_id_match = re.search(r'当前用户ID:\s*([a-zA-Z0-9_-]+)', user_input)
+                    extracted_user_id = user_id_match.group(1) if user_id_match else None
+                    if extracted_user_id:
+                        self.logger.info(f"[Fallback] 从输入中提取到用户ID: {extracted_user_id}")
+
+                    # 使用外部Agent类的统一系统提示词
+                    system_prompt = Agent.SYSTEM_PROMPT_TEMPLATE.format(
+                        agent_name=self.config.name,
+                        agent_role=self.config.role,
+                        tools_info=self.tools_info
+                    )
                     
                     try:
                         # 获取所有可用的MCP工具并创建工具映射
@@ -966,10 +1010,6 @@ class Agent:
                             system_prompt=system_prompt,
                             temperature=0.7
                         )
-
-                        print("="*100)
-                        print("最原始响应:", response)
-                        print("="*100)
 
                         # 解析计划
                         plan = []
@@ -1022,7 +1062,17 @@ class Agent:
                         if plan:
                             for step_num, step_description in enumerate(plan, 1):
                                 self.logger.info(f"[Fallback-执行] 执行步骤 {step_num}: {step_description}")
-                                
+
+                                # 发送步骤开始事件
+                                if stream_callback:
+                                    self.logger.info(f"[Fallback] 发送 step_start 事件: 步骤{step_num}")
+                                    await stream_callback({
+                                        "type": "step_start",
+                                        "step_number": step_num,
+                                        "step_description": step_description,
+                                        "total_steps": len(plan)
+                                    })
+
                                 # 构建执行步骤的提示
                                 execution_prompt = system_prompt + "\n\n对话历史:\n"
                                 for msg in dialog_history:
@@ -1060,7 +1110,12 @@ class Agent:
                                                             if '=' in param:
                                                                 key, value = param.split('=', 1)
                                                                 params[key.strip()] = value.strip(' "\'')
-                                                    
+
+                                                    # 如果是 search_video_by_vector 工具且没有 user_id 参数，自动注入
+                                                    if tool_name == "search_video_by_vector" and "user_id" not in params and extracted_user_id:
+                                                        params["user_id"] = extracted_user_id
+                                                        self.logger.info(f"[Fallback-工具调用] 自动注入 user_id: {extracted_user_id}")
+
                                                     # 调用MCP工具，修复参数格式
                                                     tool_response = await mcp_server.call_tool_async(
                                                         tool_name=tool_name,
@@ -1076,6 +1131,14 @@ class Agent:
                                                     execution_history.append(f"Step {step_num}: {step_description}")
                                                     execution_history.append(f"Action: {tool_name}({call_str})")
                                                     execution_history.append(f"Result: {tool_result}")
+
+                                                    # 发送步骤完成事件（不包含执行细节）
+                                                    if stream_callback:
+                                                        self.logger.info(f"[Fallback] 发送 step_complete 事件: 步骤{step_num}")
+                                                        await stream_callback({
+                                                            "type": "step_complete",
+                                                            "step_number": step_num
+                                                        })
                                             except Exception as e:
                                                 self.logger.error(f"[Fallback-工具调用] 解析或调用工具 {tool_name} 失败: {str(e)}")
                                             break
@@ -1083,22 +1146,87 @@ class Agent:
                                     # 直接回答
                                     execution_history.append(f"Step {step_num}: {step_description}")
                                     execution_history.append(f"Result: {step_response.strip()}")
+
+                                    # 发送步骤完成事件（不包含执行细节）
+                                    if stream_callback:
+                                        self.logger.info(f"[Fallback] 发送 step_complete 事件: 步骤{step_num} (直接回答)")
+                                        await stream_callback({
+                                            "type": "step_complete",
+                                            "step_number": step_num
+                                        })
                         
                         # 生成最终回答
                         summary_prompt = system_prompt + "\n\n执行历史:\n"
                         for entry in execution_history:
                             summary_prompt += f"{entry}\n"
-                        summary_prompt += "\n基于执行历史，请提供最终答案。"
-                        
+
+                        # 明确要求只返回结果，不重复过程
+                        summary_prompt += """
+
+## 重要提示：最终回答格式
+1. **不要重复上述执行计划和步骤过程**
+2. **直接提供用户需要的答案或结果**
+3. 如果查询到视频信息：
+   - 简短说明找到的视频（1-2句话）
+   - 使用<video_info>标签返回视频信息（严格按照之前的JSON格式）
+4. 如果是对话回答：
+   - 直接给出简洁的回答
+   - 不要说"基于上述步骤"、"经过分析"等过程性描述
+
+请提供最终答案："""
+
                         final_response = await self.llm_service.generate_async(
                             prompt=summary_prompt,
                             temperature=0.5
                         )
-                        
-                        return {"output": final_response}
+
+                        # 过滤最终回答中的内部标记
+                        cleaned_response = self._clean_final_answer(final_response)
+
+                        return {"output": cleaned_response}
                     except Exception as e:
                         self.logger.error(f"[Planning-then-Execution模式-异常恢复] 处理失败: {str(e)}")
                         return {"output": "系统在处理您的请求时遇到技术问题，请稍后重试。"}
+
+                def _clean_final_answer(self, response):
+                    """清理最终答案，移除所有内部过程标记"""
+                    import re
+
+                    final_answer = response
+
+                    # 移除 Plan: 段落
+                    final_answer = re.sub(r'Plan:\s*\n(.*?)\n\n', '', final_answer, flags=re.DOTALL)
+                    final_answer = re.sub(r'Plan:.*?(?=\n\n|\Z)', '', final_answer, flags=re.DOTALL)
+
+                    # 移除 Reasoning: 段落
+                    final_answer = re.sub(r'Reasoning:\s*\n(.*?)\n\n', '', final_answer, flags=re.DOTALL)
+                    final_answer = re.sub(r'Reasoning:.*?(?=\n\n|\Z)', '', final_answer, flags=re.DOTALL)
+
+                    # 移除以 Step: 开头的整行
+                    final_answer = re.sub(r'^Step:\s*.*$', '', final_answer, flags=re.MULTILINE)
+                    final_answer = re.sub(r'\nStep:\s*.*$', '', final_answer, flags=re.MULTILINE)
+
+                    # 移除以 Action: 开头的整行
+                    final_answer = re.sub(r'^Action:\s*.*$', '', final_answer, flags=re.MULTILINE)
+                    final_answer = re.sub(r'\nAction:\s*.*$', '', final_answer, flags=re.MULTILINE)
+
+                    # 移除以 Result: 开头的整行
+                    final_answer = re.sub(r'^Result:\s*.*$', '', final_answer, flags=re.MULTILINE)
+                    final_answer = re.sub(r'\nResult:\s*.*$', '', final_answer, flags=re.MULTILINE)
+
+                    # 移除 Execution Complete: 标记
+                    final_answer = re.sub(r'Execution Complete:.*?\n', '', final_answer)
+                    final_answer = re.sub(r'^Execution Complete:\s*.*$', '', final_answer, flags=re.MULTILINE)
+
+                    # 移除 Final Answer: 标记
+                    final_answer = re.sub(r'^Final Answer:\s*', '', final_answer)
+                    final_answer = re.sub(r'\nFinal Answer:\s*', '\n', final_answer)
+
+                    # 清理多余的空白行
+                    final_answer = re.sub(r'\n\s*\n\s*\n', '\n\n', final_answer)
+                    final_answer = final_answer.strip()
+
+                    return final_answer
             
             return FallbackPlanningThenExecutionExecutor(self.config)
     

@@ -169,8 +169,14 @@ const ChatInterface = ({
 //     console.log('formatMessage - videoResults长度:', Array.isArray(videoResults) ? videoResults.length : 'N/A');
     
     // 确保text是字符串类型
-    const messageText = typeof text === 'string' ? text : String(text || '');
-    
+    let messageText = typeof text === 'string' ? text : String(text || '');
+
+    // 提取"Final Answer:"之后的内容
+    const finalAnswerMatch = messageText.match(/Final Answer:\s*([\s\S]*)/i);
+    if (finalAnswerMatch && finalAnswerMatch[1]) {
+      messageText = finalAnswerMatch[1].trim();
+    }
+
     // 确保videoResults是数组
     const validVideoResults = Array.isArray(videoResults) ? videoResults : [];
 //     console.log('formatMessage - 处理后的有效视频结果数量:', validVideoResults.length);
@@ -379,9 +385,7 @@ const ChatInterface = ({
                               </span>
                             </div>
                             <p className="step-description">{step.description}</p>
-                            {step.status === 'completed' && step.result && (
-                              <p className="step-result">结果: {step.result.substring(0, 100)}...</p>
-                            )}
+                            {/* 不显示执行结果 */}
                           </div>
                         ))}
                       </div>
@@ -421,9 +425,12 @@ const ChatInterface = ({
               >
                 <div className="message-header">
                   <span className="message-sender">
-                    {message.sender === 'ai' ? 'AI助手' : '您'}
+                    {message.sender === 'ai' ? (
+                      <span className="sender-icon">🤖</span>
+                    ) : (
+                      <span className="sender-icon">👤</span>
+                    )}
                   </span>
-                  <span className="message-time">{message.timestamp}</span>
                 </div>
 
                 {/* 显示流式状态 */}
@@ -435,6 +442,11 @@ const ChatInterface = ({
                     ref={isLastMessage ? lastMessageRef : null}
                     dangerouslySetInnerHTML={{ __html: formatMessage(messageText, safeVideoResults) }}
                   ></div>
+
+                  {/* 消息时间显示在气泡内部底部 */}
+                  <div className="message-footer">
+                    <span className="message-time">{message.timestamp}</span>
+                  </div>
                 </div>
               </div>
           );

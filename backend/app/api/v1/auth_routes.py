@@ -71,7 +71,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
         )
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
-        subject=user.username, expires_delta=access_token_expires
+        subject=user.id, expires_delta=access_token_expires
     )
     # 更新最后登录时间
     user.last_login = datetime.utcnow()
@@ -90,7 +90,7 @@ async def login_json(login_data: LoginRequest, db: Session = Depends(get_db)):
         )
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
-        subject=user.username, expires_delta=access_token_expires
+        subject=user.id, expires_delta=access_token_expires
     )
     # 更新最后登录时间
     user.last_login = datetime.utcnow()

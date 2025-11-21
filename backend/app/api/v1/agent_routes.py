@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from app.services.agent_service import agent_service, AgentConfig
 from app.core.mcp import mcp_server, ToolCall, ToolResponse
 from app.core.tool_registry import initialize as initialize_tool_registry
+from app.core.security import verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -527,6 +528,11 @@ async def chat_with_agent_websocket(websocket: WebSocket):
 
     使用WebSocket协议实现真正的实时双向通信，不受localhost TCP缓冲影响
     """
+    from app.core.database import SessionLocal
+    from app.core.security import verify_token
+    from app.models.user import User
+    from app.models.video import Video
+
     await websocket.accept()
     logger.info("[WebSocket] 客户端连接成功")
 
@@ -535,6 +541,7 @@ async def chat_with_agent_websocket(websocket: WebSocket):
         data = await websocket.receive_json()
         message = data.get("message", "")
         config_data = data.get("config", None)
+        token = data.get("token", None)  # 获取认证令牌
 
         logger.info(f"[WebSocket] 收到消息: {message[:100]}...")
 
@@ -544,13 +551,43 @@ async def chat_with_agent_websocket(websocket: WebSocket):
             "message": "WebSocket连接成功"
         })
 
+        # 获取用户信息
+        user_id = None
+        logger.info(f"[WebSocket] 收到token: {token}")
+        logger.info(f"[WebSocket] token类型: {type(token)}, token是否为None: {token is None}, token是否为空: {not token}")
+
+        if token:
+            logger.info(f"[WebSocket] 开始调用 verify_token...")
+            user_id = verify_token(token)
+        else:
+            logger.warning(f"[WebSocket] token为空，跳过用户认证")
+
+        # 设置当前用户ID到上下文变量中
+        from app.core.context import set_current_user_id
+        if user_id:
+            set_current_user_id(user_id)
+            logger.info(f"[WebSocket] 已设置 contextvar user_id: {user_id}")
+
         # 创建agent配置
         if config_data:
             config = AgentConfig(**config_data)
         else:
             config = AgentConfig()
 
-        # 增强请求格式
+        # 增强请求格式，包含用户ID信息
+        user_video_info = ""
+        if user_id:
+            user_video_info = f"""
+
+## 用户视频范围限制
+当前用户ID: {user_id}
+**重要**: 在调用 search_video_by_vector 工具时，必须传入 user_id 参数，值为: "{user_id}"
+这样可以确保只搜索用户自己上传的视频。
+
+调用示例:
+search_video_by_vector(query="用户的搜索词", top_k=10, user_id="{user_id}")
+"""
+
         enhanced_request = f"""
 {message}
 
@@ -562,6 +599,7 @@ async def chat_with_agent_websocket(websocket: WebSocket):
 </video_info>
 
 请严格按照上述格式返回视频信息。如果没有视频信息，请不要包含<video_info>标签。
+{user_video_info}
 """
 
         # WebSocket回调函数 - 直接发送！
@@ -609,6 +647,37 @@ async def chat_with_agent_websocket(websocket: WebSocket):
                 text_content = re.sub(r'<video_info>.*?</video_info>', '', result, flags=re.DOTALL).strip()
             except Exception as e:
                 logger.error(f"[WebSocket] 解析视频信息失败: {str(e)}")
+
+        # 强制过滤掉Plan和Reasoning等过程性内容
+        # 策略：移除以"Plan:"开头的段落和"Reasoning:"开头的段落
+        lines = text_content.split('\n')
+        filtered_lines = []
+        skip_mode = False
+
+        for line in lines:
+            line_stripped = line.strip()
+            # 检查是否是Plan或Reasoning的开始
+            if line_stripped.lower().startswith('plan:') or line_stripped.lower().startswith('reasoning:'):
+                skip_mode = True
+                continue
+            # 如果遇到两个连续空行，结束skip模式
+            if skip_mode and line_stripped == '':
+                skip_mode = False
+                continue
+            # 如果不在skip模式，保留这一行
+            if not skip_mode:
+                filtered_lines.append(line)
+
+        text_content = '\n'.join(filtered_lines).strip()
+
+        # 再次移除可能残留的<video_info>标签
+        text_content = re.sub(r'<video_info>.*?</video_info>', '', text_content, flags=re.DOTALL).strip()
+
+        # 如果移除后内容为空，使用默认消息
+        if not text_content and video_info_list:
+            text_content = f"找到 {len(video_info_list)} 个相关视频"
+        elif not text_content:
+            text_content = "处理完成"
 
         # 发送最终完成事件
         await websocket.send_json({

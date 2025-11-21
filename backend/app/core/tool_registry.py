@@ -478,9 +478,9 @@ def register_prompt_templates():
             default=10
         ),
         ToolParameter(
-            name="user_video_ids",
-            type="array",
-            description="用户上传的视频ID列表，用于限制搜索范围",
+            name="user_id",
+            type="string",
+            description="用户ID，用于限制搜索范围只搜索该用户的视频",
             required=False
         )
     ],
@@ -490,17 +490,17 @@ def register_prompt_templates():
     },
     tags=["video", "search", "vector", "mcp"]
 )
-async def search_video_by_vector_tool(query: str, top_k: int = 10, user_video_ids: List[str] = None) -> Dict[str, Any]:
+async def search_video_by_vector_tool(query: str, top_k: int = 10, user_id: str = None) -> Dict[str, Any]:
     """
     MCP工具：视频向量搜索
-    
+
     使用查询文本生成向量，然后在Milvus向量数据库中搜索相似的视频内容。
     返回包含视频ID、匹配文本和时间戳的搜索结果。
-    
+
     Args:
         query: 搜索查询文本
         top_k: 返回结果数量，默认10
-        user_video_ids: 用户上传的视频ID列表，用于限制搜索范围
+        user_id: 用户ID，用于限制搜索范围只搜索该用户的视频
     """
     import numpy as np
     from sqlalchemy.orm import Session
@@ -508,43 +508,45 @@ async def search_video_by_vector_tool(query: str, top_k: int = 10, user_video_id
     from app.core.milvus import milvus_context
     from app.services.llm_service import llm_service
     from app.models.video import Video
+    from app.core.context import get_current_user_id
     import logging
-    
+
     logger = logging.getLogger(__name__)
     db = SessionLocal()
-    
+
+    # 如果没有传入 user_id，尝试从 contextvar 获取
+    if user_id is None:
+        user_id = get_current_user_id()
+        if user_id:
+            logger.info(f"[search_video_by_vector] 从 contextvar 获取到 user_id: {user_id}")
+    logger.info(f"+++++++++++++++++++用户：{user_id}")
     try:
         logger.info(f"开始向量搜索，查询: {query}, top_k: {top_k}")
-        
-        # 如果提供了用户视频ID列表，记录日志
-        if user_video_ids:
-            logger.info(f"限制搜索范围到用户视频: {user_video_ids}")
-        
+
+        # 如果提供了用户ID，记录日志并构建过滤条件
+        filters = None
+        if user_id:
+            logger.info(f"限制搜索范围到用户ID: {user_id}")
+            filters = {"user_id": user_id}
+
         # 为查询生成向量
         logger.info(f"正在为查询 '{query}' 生成向量表示")
         query_embedding = llm_service.generate_embedding(query)
         logger.info(f"查询向量生成完成，维度: {len(query_embedding)}")
         logger.info(f"查询向量前5个值: {query_embedding[:5]}")
-        
-        # 使用Milvus进行向量搜索
+
+        # 使用Milvus进行向量搜索，在数据库层面进行过滤
         with milvus_context() as mc:
-            # 搜索所有类型的内容（转录、摘要和字幕段落）
+            # 使用 user_id 过滤条件搜索
             search_results = mc.search_vectors(
                 query_vector=np.array(query_embedding),
-                top_k=top_k * 2,  # 获取更多结果，以便过滤后仍有足够的结果
-                filters=None  # 不限制内容类型，搜索所有内容
+                top_k=top_k,
+                filters=filters  # 在数据库层面过滤用户的视频
             )
-        
+
         logger.info(f"Milvus搜索完成，返回 {len(search_results)} 个向量结果")
-        
-        # 如果提供了用户视频ID列表，过滤结果
-        if user_video_ids:
-            search_results = [
-                result for result in search_results 
-                if result["video_id"] in user_video_ids
-            ]
-            logger.info(f"过滤后剩余 {len(search_results)} 个用户视频结果")
-        
+        logger.info(f"Milvus搜索完成，返回 {search_results}")
+
         # 去重处理，按视频ID分组
         video_groups = {}
         for result in search_results:
@@ -583,17 +585,28 @@ async def search_video_by_vector_tool(query: str, top_k: int = 10, user_video_id
             logger.info("+++++++++++++++++++")
             video = db.query(Video).filter(Video.id == video_id).first()
             if video:
-                logger.info(f"视频ID {video_id} 元数据: {video.__dict__}")
-                # 计算相关度百分比
-                relevance = round((1.0 / (1.0 + group["best_match_score"])) * 100, 1)
+                # logger.info(f"视频ID {video_id} 元数据: {video.__dict__}")
+                # 计算相关度百分比 - 针对高维向量的L2距离优化
+                # 对于高维向量（如1536维），L2距离可能很大（几千），需要使用对数转换
+                import math
+                distance = group["best_match_score"]
+
+                # 使用对数转换将大的L2距离映射到合理的相似度分数
+                # 公式: similarity = 100 / (1 + log(1 + distance))
+                # 这样：distance=0 → 100%, distance=100 → 21%, distance=1000 → 14%, distance=4000 → 12%
+                relevance = round(100.0 / (1.0 + math.log(1.0 + distance)), 1)
+                logger.info(f"视频ID {video_id} 原始距离: {distance}, 计算后相关度: {relevance}%")
                 
                 # 构建简化的结果格式，包含所有必要信息，特别是id字段
                 final_results.append({
                     "id": video.id,  # 视频ID，这是关键的字段，确保前端能获取正确的ID
                     "video_id": video.id,  # 额外添加video_id字段作为冗余，确保兼容性
                     "link": f"/api/v1/videos/{video.id}/outline",  # 跳转到大纲详情页的连接
+                    "video_link": f"/api/v1/videos/{video.id}/outline",  # Agent 需要的字段名
                     "title": video.filename,  # 视频标题
+                    "thumbnail": "",  # 缩略图（暂无）
                     "similarity": relevance,  # 视频匹配相似度（百分比）
+                    "relevance_score": relevance,  # Agent 需要的字段名
                     "matched_subtitles": group["best_match_content"]  # 匹配到的字幕内容
                 })
         

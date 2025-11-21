@@ -4,6 +4,10 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
 from app.core.config import settings
+import logging
+
+# 创建日志记录器
+logger = logging.getLogger(__name__)
 
 # 密码加密上下文
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -54,6 +58,7 @@ def verify_token(token: str) -> Optional[str]:
             algorithms=[settings.algorithm]
         )
         username: str = payload.get("sub")
+        print(f"[verify_token] 解码JWT令牌，主题: {username}")
         if username is None:
             return None
         return username

@@ -787,3 +787,54 @@
   color: #1557b0;
   text-decoration: underline;
 }
+
+/* 发送者名称样式 */
+.sender-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sender-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.sender-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+/* AI消息的发送者名称 */
+.message.ai .sender-name {
+  color: #2563eb;
+}
+
+/* 用户消息的发送者名称 */
+.message.user .sender-name {
+  color: #059669;
+}
+
+/* 消息底部区域 - 显示在气泡内部底部 */
+.message-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.message.user .message-footer {
+  justify-content: flex-end;
+}
+
+.message.ai .message-footer {
+  justify-content: flex-end;
+}
+
+.message-footer .message-time {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: normal;
+  opacity: 0.8;
+}

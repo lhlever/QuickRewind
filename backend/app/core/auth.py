@@ -39,7 +39,7 @@ async def get_current_user(
         raise credentials_exception
     
     # 从数据库获取用户
-    user = db.query(User).filter(User.username == username).first()
+    user = db.query(User).filter(User.id == username).first()
     if user is None:
         raise credentials_exception
     
