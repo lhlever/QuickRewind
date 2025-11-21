@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # 火山引擎配置（简化版）
     volcengine_api_key: str = "your-volcengine-api-key"
     volcengine_region: str = "https://ark.cn-beijing.volces.com/api/v3"
-    volcengine_model: str = "doubao-seed-1-6-flash-250828"
+    volcengine_model: str = "doubao-seed-1-6-thinking-250715"
     volcengine_embedding_model: str = "text-embedding-v1"
     volcengine_embedding_dim: int = 2560
     
